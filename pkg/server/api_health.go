@@ -28,7 +28,10 @@ type HealthResponse struct {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	// Use a 10-second timeout for all health checks to prevent hanging
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
 	checks := make(map[string]any)
 
 	// Check qBit API
