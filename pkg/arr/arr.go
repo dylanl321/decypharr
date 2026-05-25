@@ -219,11 +219,23 @@ func (s *Storage) GetOrCreate(name string) *Arr {
 }
 
 func (s *Storage) Get(name string) *Arr {
+	// Try exact match first (fast path)
 	a, ok := s.arrs.Load(name)
-	if !ok {
-		return nil
+	if ok {
+		return a
 	}
-	return a
+	// Fall back to case-insensitive lookup
+	// Sonarr/Radarr send category as lowercase (e.g. "sonarr")
+	// but arr names may be stored capitalized (e.g. "Sonarr")
+	var found *Arr
+	s.arrs.Range(func(key string, value *Arr) bool {
+		if strings.EqualFold(key, name) {
+			found = value
+			return false
+		}
+		return true
+	})
+	return found
 }
 
 func (s *Storage) GetAll() []*Arr {

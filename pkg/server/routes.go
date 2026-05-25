@@ -47,10 +47,48 @@ func (s *Server) WebRoutes() http.Handler {
 
 		// API routes
 		r.Route("/api", func(r chi.Router) {
-			// Arr management
+			// Health and Status
+			r.Get("/health", s.handleHealth)
+			r.Get("/stats", s.stats.Handler())
+			r.Get("/debrid/status", s.handleDebridStatus)
+			r.Get("/queue/summary", s.handleQueueSummary)
+			r.Get("/version", s.handleGetAPIVersion)
+
+			// Arr management (full CRUD)
 			r.Get("/arrs", s.handleGetArrs)
+			r.Post("/arrs", s.handleAddArr)
+			r.Put("/arrs/{name}", s.handleUpdateArr)
+			r.Delete("/arrs/{name}", s.handleDeleteArr)
+			r.Post("/arrs/{name}/test", s.handleTestArr)
 			r.Get("/debrid/rate-limits", s.handleDebridRateLimits)
 			r.Post("/add", s.handleAddContent)
+
+			// Queue management (CRUD + Actions)
+			r.Get("/queue/{hash}", s.handleGetQueueItem)
+			r.Post("/queue/{hash}/retry", s.handleRetryQueueItem)
+			r.Post("/queue/{hash}/pause", s.handlePauseQueueItem)
+			r.Post("/queue/{hash}/resume", s.handleResumeQueueItem)
+			r.Delete("/queue/completed", s.handleDeleteCompleted)
+			r.Delete("/queue/errors", s.handleDeleteErrors)
+			r.Post("/queue/retry-all-errors", s.handleRetryAllErrors)
+
+			// Debrid Provider Management
+			r.Get("/debrid/providers", s.handleGetDebridProviders)
+			r.Post("/debrid/providers/{name}/test", s.handleTestDebridProvider)
+
+			// Notification Settings
+			r.Get("/notifications/config", s.handleGetNotificationConfig)
+			r.Put("/notifications/config", s.handleUpdateNotificationConfig)
+
+			// Mount Status/Info
+			r.Get("/mount/status", s.handleGetMountStatus)
+			r.Post("/mount/refresh", s.handleRefreshMount)
+
+			// Log Viewing
+			r.Get("/logs", s.handleGetLogs)
+
+			// System/Service Control
+			r.Post("/restart", s.handleRestart)
 
 			// Repair / health-checker operations
 			r.Get("/repair/config", s.handleGetRepairConfig)
