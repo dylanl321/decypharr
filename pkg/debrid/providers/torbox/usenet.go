@@ -119,9 +119,7 @@ func (tb *Torbox) CheckNZBStatus(ctx context.Context, dl *types.UsenetDownload) 
 		tb.logger.Info().Msgf("Usenet download: %s ready", dl.Name)
 		return dl, nil
 	case types.TorrentStatusDownloading:
-		if !dl.DownloadUncached {
-			return dl, fmt.Errorf("usenet download: %s not cached", dl.Name)
-		}
+		// NZB via debrid is always "uncached" — TorBox downloads from usenet providers
 		return dl, nil
 	default:
 		return dl, fmt.Errorf("usenet download: %s has error", dl.Name)
