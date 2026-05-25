@@ -37,6 +37,9 @@ message ProviderEntryProto {
   map<string, ProviderFileProto> files = 8;
   int64 downloaded_at_unix = 9;
   bool has_downloaded_at = 10;
+  int64 last_progress_at_unix = 11;
+  bool has_last_progress_at = 12;
+  double last_progress_value = 13;
 }
 
 // ============================================================================
@@ -91,6 +94,10 @@ message EntryProto {
   int32 error_count = 37;
   int64 last_error_time_unix = 38;
   bool has_last_error_time = 39;
+
+  string phase = 40;
+  double debrid_progress = 41;
+  double local_progress = 42;
 }
 
 // ============================================================================

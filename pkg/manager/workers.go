@@ -15,6 +15,7 @@ func (m *Manager) runInitialCalls(ctx context.Context) {
 	// Initial call to track available slots
 	go m.refreshDownloadLinks(ctx)
 	go m.trackAvailableSlots(ctx)
+	m.recoverQueueOnStartup()
 	go m.processQueuedEntries()
 	go m.syncAccounts()
 }
@@ -67,6 +68,25 @@ func (m *Manager) addQueueProcessorJob(ctx context.Context) error {
 			m.logger.Error().Err(err).Msg("Failed to create slots tracking job")
 		} else {
 			m.logger.Debug().Msgf("Queue processing job scheduled for every %s", m.config.RefreshInterval)
+		}
+	}
+
+	if jd, err := utils.ConvertToJobDef("5m"); err == nil {
+		if _, err := m.scheduler.NewJob(jd, gocron.NewTask(func() {
+			m.processStaleQueueEntries()
+		}), gocron.WithContext(ctx)); err != nil {
+			m.logger.Error().Err(err).Msg("Failed to create stale queue processor job")
+		}
+	}
+
+	cfg := config.Get()
+	if cfg != nil && cfg.FailoverTimeoutHours > 0 {
+		if jd, err := utils.ConvertToJobDef("15m"); err == nil {
+			if _, err := m.scheduler.NewJob(jd, gocron.NewTask(func() {
+				m.processProviderFailover(ctx)
+			}), gocron.WithContext(ctx)); err != nil {
+				m.logger.Error().Err(err).Msg("Failed to create provider failover job")
+			}
 		}
 	}
 

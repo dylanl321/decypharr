@@ -179,6 +179,21 @@ type Config struct {
 	SkipAutoMove bool   `json:"skip_auto_move,omitempty"`
 
 	Repair RepairConfig `json:"repair,omitzero"`
+
+	// PreferCachedProvider runs parallel cache checks before submit (nil/absent = enabled).
+	PreferCachedProvider *bool `json:"prefer_cached_provider,omitempty"`
+
+	// CategoryPaths maps Arr/category names to absolute download paths (case-insensitive keys).
+	CategoryPaths map[string]string `json:"category_paths,omitempty"`
+
+	// StaleDownloadHours marks entries with no debrid progress for this long as failed (0 = disabled).
+	StaleDownloadHours int `json:"stale_download_hours,omitempty"`
+
+	// StuckCompleteMinutes retries or fails entries stuck at debrid-complete without local finish (0 = 30 default when stale job runs).
+	StuckCompleteMinutes int `json:"stuck_complete_minutes,omitempty"`
+
+	// FailoverTimeoutHours switches to another provider when progress is flat for this long (0 = disabled).
+	FailoverTimeoutHours int `json:"failover_timeout_hours,omitempty"`
 }
 
 func (c *Config) JsonFile() string {
@@ -328,6 +343,14 @@ func (c *Config) SaveAuth(auth *Auth) error {
 
 func (c *Config) NeedsAuth() bool {
 	return c.UseAuth && (c.Auth == nil || c.Auth.Username == "" || c.Auth.Password == "")
+}
+
+// PreferCached returns whether pre-flight cache selection is enabled (default true).
+func (c *Config) PreferCached() bool {
+	if c.PreferCachedProvider == nil {
+		return true
+	}
+	return *c.PreferCachedProvider
 }
 
 // migrateQBitTorrentToManager migrates deprecated QBitTorrent config to Manager

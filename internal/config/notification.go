@@ -6,6 +6,7 @@ type NotificationEvent string
 const (
 	EventDownloadComplete NotificationEvent = "download_complete"
 	EventDownloadFailed   NotificationEvent = "download_failed"
+	EventDebridReady        NotificationEvent = "debrid_ready"
 	EventRepairPending    NotificationEvent = "repair_pending"
 	EventRepairComplete   NotificationEvent = "repair_complete"
 	EventRepairFailed     NotificationEvent = "repair_failed"

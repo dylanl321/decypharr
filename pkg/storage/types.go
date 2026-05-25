@@ -29,6 +29,12 @@ const (
 	EntryStatePausedDL    TorrentState = "pausedDL"
 	EntryStatePausedUP    TorrentState = "pausedUP"
 	EntryStateError       TorrentState = "error"
+
+	DownloadPhaseQueued         = "queued"
+	DownloadPhaseDebridFetching = "debrid_fetching"
+	DownloadPhaseDownloading    = "downloading"
+	DownloadPhaseImporting      = "importing"
+	DownloadPhaseComplete       = "complete"
 )
 
 // Common errors
@@ -60,9 +66,14 @@ type Entry struct {
 	Files map[string]*File `msgpack:"files" json:"files"` // filename -> File details
 
 	State TorrentState `msgpack:"state" json:"state"` // This is for QBitTorrent compatibility
+	Phase string       `msgpack:"phase,omitempty" json:"phase,omitempty"` // Lifecycle phase for debugging (see DownloadPhase* constants)
+
 	// Provider State (from active providerEntry)
 	Status   debridTypes.TorrentStatus `msgpack:"status" json:"status"`     // downloaded, downloading, queued, error
-	Progress float64                   `msgpack:"progress" json:"progress"` // Download progress (0-100)
+	Progress float64                   `msgpack:"progress" json:"progress"` // Combined display progress (0-1)
+
+	DebridProgress float64 `msgpack:"debrid_progress,omitempty" json:"debrid_progress,omitempty"` // Debrid cache progress (0-1)
+	LocalProgress  float64 `msgpack:"local_progress,omitempty" json:"local_progress,omitempty"`   // HTTP pull to NAS (0-1)
 	Speed    int64                     `msgpack:"speed" json:"speed"`       // Download speed
 	Seeders  int                       `msgpack:"seeders" json:"seeders"`   // Number of seeders
 
@@ -219,7 +230,9 @@ type ProviderEntry struct {
 	Files map[string]*ProviderFile `msgpack:"files" json:"files"` // filename -> debrid-specific file info
 
 	// Cached data from debrid (avoid re-fetching)
-	DownloadedAt *time.Time `msgpack:"downloaded_at,omitempty" json:"downloaded_at,omitempty"` // When download completed on debrid
+	DownloadedAt     *time.Time `msgpack:"downloaded_at,omitempty" json:"downloaded_at,omitempty"`           // When download completed on debrid
+	LastProgressAt   time.Time  `msgpack:"last_progress_at,omitempty" json:"last_progress_at,omitempty"`     // Last time progress advanced
+	LastProgressValue float64   `msgpack:"last_progress_value,omitempty" json:"last_progress_value,omitempty"` // Progress at LastProgressAt
 }
 
 // NeedsUpdate checks if this placement is stale compared to the remote torrent.
@@ -400,9 +413,12 @@ func (e *Entry) SwitchToNextProvider() {
 // MarkAsCompleted marks the torrent as completed
 func (e *Entry) MarkAsCompleted(contentPath string) {
 	e.State = EntryStatePausedUP
+	e.Phase = DownloadPhaseComplete
 	e.IsDownloading = false
 	e.IsComplete = true
 	e.Progress = 1.0
+	e.DebridProgress = 1.0
+	e.LocalProgress = 1.0
 	e.ContentPath = contentPath
 	now := time.Now()
 	e.CompletedAt = &now
@@ -412,6 +428,7 @@ func (e *Entry) MarkAsCompleted(contentPath string) {
 // MarkAsError marks the torrent as errored
 func (e *Entry) MarkAsError(err error) {
 	e.State = EntryStateError
+	e.Phase = ""
 	e.IsDownloading = false
 	e.LastError = err.Error()
 	e.ErrorCount++

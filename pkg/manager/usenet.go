@@ -39,7 +39,7 @@ func (m *Manager) AddNewNZB(ctx context.Context, req *ImportRequest) (string, er
 		Protocol:         config.ProtocolNZB,
 		Bytes:            meta.TotalSize,
 		Category:         req.Arr.Name,
-		SavePath:         filepath.Join(req.DownloadFolder, req.Arr.Name),
+		SavePath:         config.ResolveCategoryPath(req.Arr.Name, req.DownloadFolder, req.Arr.Name),
 		Status:           debridTypes.TorrentStatusDownloading,
 		State:            storage.EntryStateDownloading,
 		Progress:         0,

@@ -200,9 +200,12 @@ type ProviderEntryProto struct {
 	Progress         float64                       `protobuf:"fixed64,7,opt,name=progress,proto3" json:"progress,omitempty"`
 	Files            map[string]*ProviderFileProto `protobuf:"bytes,8,rep,name=files,proto3" json:"files,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	DownloadedAtUnix int64                         `protobuf:"varint,9,opt,name=downloaded_at_unix,json=downloadedAtUnix,proto3" json:"downloaded_at_unix,omitempty"`
-	HasDownloadedAt  bool                          `protobuf:"varint,10,opt,name=has_downloaded_at,json=hasDownloadedAt,proto3" json:"has_downloaded_at,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	HasDownloadedAt    bool    `protobuf:"varint,10,opt,name=has_downloaded_at,json=hasDownloadedAt,proto3" json:"has_downloaded_at,omitempty"`
+	LastProgressAtUnix int64   `protobuf:"varint,11,opt,name=last_progress_at_unix,json=lastProgressAtUnix,proto3" json:"last_progress_at_unix,omitempty"`
+	HasLastProgressAt  bool    `protobuf:"varint,12,opt,name=has_last_progress_at,json=hasLastProgressAt,proto3" json:"has_last_progress_at,omitempty"`
+	LastProgressValue  float64 `protobuf:"fixed64,13,opt,name=last_progress_value,json=lastProgressValue,proto3" json:"last_progress_value,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ProviderEntryProto) Reset() {
@@ -345,7 +348,10 @@ type EntryProto struct {
 	LastError         string                         `protobuf:"bytes,36,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
 	ErrorCount        int32                          `protobuf:"varint,37,opt,name=error_count,json=errorCount,proto3" json:"error_count,omitempty"`
 	LastErrorTimeUnix int64                          `protobuf:"varint,38,opt,name=last_error_time_unix,json=lastErrorTimeUnix,proto3" json:"last_error_time_unix,omitempty"`
-	HasLastErrorTime  bool                           `protobuf:"varint,39,opt,name=has_last_error_time,json=hasLastErrorTime,proto3" json:"has_last_error_time,omitempty"`
+	HasLastErrorTime  bool    `protobuf:"varint,39,opt,name=has_last_error_time,json=hasLastErrorTime,proto3" json:"has_last_error_time,omitempty"`
+	Phase             string  `protobuf:"bytes,40,opt,name=phase,proto3" json:"phase,omitempty"`
+	DebridProgress    float64 `protobuf:"fixed64,41,opt,name=debrid_progress,json=debridProgress,proto3" json:"debrid_progress,omitempty"`
+	LocalProgress     float64 `protobuf:"fixed64,42,opt,name=local_progress,json=localProgress,proto3" json:"local_progress,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }

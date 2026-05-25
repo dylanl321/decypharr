@@ -110,11 +110,19 @@ func (d *Downloader) download(torrent *storage.Entry) error {
 	return d.process(torrent, torrentMountPath)
 }
 
+func overallProgress(debridProgress, localProgress float64, action config.DownloadAction) float64 {
+	if action != config.DownloadActionDownload {
+		return debridProgress
+	}
+	return debridProgress*0.5 + localProgress*0.5
+}
+
 func (d *Downloader) process(entry *storage.Entry, mountPath string) error {
 	switch entry.Action {
 	case config.DownloadActionDownload:
 		return d.processDownload(entry)
 	case config.DownloadActionSymlink:
+		entry.Phase = storage.DownloadPhaseImporting
 		return d.processSymlink(entry, mountPath)
 	case config.DownloadActionStrm:
 		return d.processStrm(entry)
@@ -485,7 +493,12 @@ func (d *Downloader) processTorrentDownload(entry *storage.Entry) error {
 	}
 	entry.SizeDownloaded = 0
 	entry.IsDownloading = true
-	entry.Progress = 0
+	entry.LocalProgress = 0
+	if entry.DebridProgress < 1.0 {
+		entry.DebridProgress = 1.0
+	}
+	entry.Phase = storage.DownloadPhaseDownloading
+	entry.Progress = overallProgress(entry.DebridProgress, entry.LocalProgress, entry.Action)
 
 	var progressMu sync.Mutex
 	progressCallback := func(downloaded int64, speed int64) {
@@ -495,8 +508,9 @@ func (d *Downloader) processTorrentDownload(entry *storage.Entry) error {
 		entry.SizeDownloaded += downloaded
 		entry.Speed = speed
 		if totalSize > 0 {
-			entry.Progress = float64(entry.SizeDownloaded) / float64(totalSize)
+			entry.LocalProgress = float64(entry.SizeDownloaded) / float64(totalSize)
 		}
+		entry.Progress = overallProgress(entry.DebridProgress, entry.LocalProgress, entry.Action)
 		entry.UpdatedAt = time.Now()
 		_ = d.manager.queue.Update(entry)
 	}

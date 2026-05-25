@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	json "github.com/bytedance/sonic"
 	"github.com/puzpuzpuz/xsync/v4"
@@ -138,6 +139,12 @@ func (a *Arr) Request(method, endpoint string, payload interface{}, res any) (*h
 }
 
 func (a *Arr) Validate() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return a.ValidateCtx(ctx)
+}
+
+func (a *Arr) ValidateCtx(ctx context.Context) error {
 	if a.Token == "" || a.Host == "" {
 		return fmt.Errorf("arr not configured")
 	}
@@ -145,7 +152,7 @@ func (a *Arr) Validate() error {
 	if utils.ValidateURL(a.Host) != nil {
 		return fmt.Errorf("invalid arr host URL")
 	}
-	resp, err := a.Request("GET", "/api/v3/health", nil, nil)
+	resp, err := a.RequestCtx(ctx, "GET", "/api/v3/health", nil, nil)
 	if err != nil {
 		return err
 	}

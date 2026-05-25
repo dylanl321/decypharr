@@ -228,7 +228,7 @@ func (q *QBit) handleTorrentRecheck(w http.ResponseWriter, r *http.Request) {
 func (q *QBit) handleCategories(w http.ResponseWriter, r *http.Request) {
 	var categories = map[string]TorrentCategory{}
 	for _, cat := range q.categories {
-		path := filepath.Join(q.downloadFolder, cat)
+		path := config.ResolveCategoryPath(cat, q.downloadFolder, cat)
 		categories[cat] = TorrentCategory{
 			Name:     cat,
 			SavePath: path,

@@ -372,8 +372,11 @@ type Torrent struct {
 	ContentPath  string               `json:"content_path"`
 	AddedOn      int64                `json:"added_on"`
 	CompletionOn int64                `json:"completion_on"`
-	Debrid       string               `json:"debrid"`
-	DebridID     string               `json:"debrid_id"`
+	Debrid         string  `json:"debrid"`
+	DebridID       string  `json:"debrid_id"`
+	Phase          string  `json:"phase,omitempty"`
+	DebridProgress float64 `json:"debrid_progress,omitempty"`
+	LocalProgress  float64 `json:"local_progress,omitempty"`
 	AmountLeft   int64                `json:"amount_left"`
 	Downloaded   int64                `json:"downloaded"`
 	MagnetURI    string               `json:"magnet_uri"`
@@ -414,8 +417,11 @@ func convertToQBitTorrentTorrent(t *storage.Entry) Torrent {
 		ContentPath:  t.ContentPath,
 		AddedOn:      t.CreatedAt.Unix(),
 		CompletionOn: 0,
-		Debrid:       t.ActiveProvider,
-		DebridID:     "",
+		Debrid:         t.ActiveProvider,
+		DebridID:       "",
+		Phase:          t.Phase,
+		DebridProgress: t.DebridProgress,
+		LocalProgress:  t.LocalProgress,
 		AmountLeft:   int64(float64(t.Size) * (1 - t.Progress)),
 		Downloaded:   int64(float64(t.Size) * t.Progress),
 		MagnetURI:    t.Magnet,

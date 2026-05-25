@@ -90,6 +90,11 @@ func providerEntryToProto(pe *ProviderEntry) *ProviderEntryProto {
 		pb.HasDownloadedAt = true
 		pb.DownloadedAtUnix = pe.DownloadedAt.Unix()
 	}
+	if !pe.LastProgressAt.IsZero() {
+		pb.HasLastProgressAt = true
+		pb.LastProgressAtUnix = pe.LastProgressAt.Unix()
+		pb.LastProgressValue = pe.LastProgressValue
+	}
 	for name, pf := range pe.Files {
 		pb.Files[name] = providerFileToProto(pf)
 	}
@@ -114,6 +119,10 @@ func protoToProviderEntry(pb *ProviderEntryProto) *ProviderEntry {
 	if pb.HasDownloadedAt {
 		t := time.Unix(pb.DownloadedAtUnix, 0)
 		pe.DownloadedAt = &t
+	}
+	if pb.HasLastProgressAt {
+		pe.LastProgressAt = time.Unix(pb.LastProgressAtUnix, 0)
+		pe.LastProgressValue = pb.LastProgressValue
 	}
 	for name, pf := range pb.Files {
 		pe.Files[name] = protoToProviderFile(pf)
@@ -157,6 +166,9 @@ func EntryToProto(e *Entry) *EntryProto {
 		SkipMultiSeason:  e.SkipMultiSeason,
 		LastError:        e.LastError,
 		ErrorCount:       int32(e.ErrorCount),
+		Phase:            e.Phase,
+		DebridProgress:   e.DebridProgress,
+		LocalProgress:    e.LocalProgress,
 	}
 
 	// Timestamps
@@ -225,6 +237,9 @@ func ProtoToEntry(pb *EntryProto) *Entry {
 		SkipMultiSeason:  pb.SkipMultiSeason,
 		LastError:        pb.LastError,
 		ErrorCount:       int(pb.ErrorCount),
+		Phase:            pb.Phase,
+		DebridProgress:   pb.DebridProgress,
+		LocalProgress:    pb.LocalProgress,
 	}
 
 	// Timestamps

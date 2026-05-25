@@ -30,6 +30,7 @@ func (s *Server) WebRoutes() http.Handler {
 	// Setup wizard - public, no auth required
 	r.Get("/setup", s.SetupHandler)
 	r.Post("/api/setup/complete", s.setupCompleteHandler)
+	r.Get("/api/health", s.handleAPIHealth)
 
 	// Protected routes - require auth
 	r.Group(func(r chi.Router) {
@@ -46,6 +47,7 @@ func (s *Server) WebRoutes() http.Handler {
 		r.Route("/api", func(r chi.Router) {
 			// Arr management
 			r.Get("/arrs", s.handleGetArrs)
+			r.Get("/debrid/rate-limits", s.handleDebridRateLimits)
 			r.Post("/add", s.handleAddContent)
 
 			// Repair / health-checker operations

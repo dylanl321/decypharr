@@ -18,10 +18,11 @@ import (
 
 // HealthStatus represents the status of various components
 type HealthStatus struct {
-	QbitAPI       bool `json:"qbit_api"`
-	WebUI         bool `json:"web_ui"`
-	WebDAVService bool `json:"webdav_service"`
-	OverallStatus bool `json:"overall_status"`
+	QbitAPI       bool   `json:"qbit_api"`
+	WebUI         bool   `json:"web_ui"`
+	WebDAVService bool   `json:"webdav_service"`
+	APIHealth     string `json:"api_health,omitempty"`
+	OverallStatus bool   `json:"overall_status"`
 }
 
 func main() {
@@ -60,9 +61,11 @@ func main() {
 	status.QbitAPI = checkQbitAPI(ctx, client, baseUrl, port, auth, cfg.UseAuth)
 	status.WebUI = checkWebUI(ctx, client, baseUrl, port, auth, cfg.UseAuth)
 	status.WebDAVService = checkBaseWebdav(ctx, client, baseUrl, port, cfg)
+	status.APIHealth = checkAPIHealth(ctx, client, baseUrl, port, auth, cfg.UseAuth)
 	// Determine overall status
 	// Consider the application healthy if core services are running
-	status.OverallStatus = status.QbitAPI && status.WebUI && status.WebDAVService
+	status.OverallStatus = status.QbitAPI && status.WebUI && status.WebDAVService &&
+		(status.APIHealth == "" || status.APIHealth == "healthy" || status.APIHealth == "degraded")
 
 	// Optional: output health status as JSON for logging
 	if debug {
@@ -76,6 +79,34 @@ func main() {
 	}
 
 	os.Exit(1)
+}
+
+func checkAPIHealth(ctx context.Context, client *http.Client, baseUrl, port string, auth *config.Auth, authMayBeRequired bool) string {
+	url := localURL(port, baseUrl, "api/health")
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "error"
+	}
+	addBearerAuth(req, auth)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "error"
+	}
+	defer drainAndClose(resp)
+	if !isHealthyStatus(resp.StatusCode, authMayBeRequired, http.StatusOK) {
+		drainAndClose(resp)
+		return "error"
+	}
+	b, _ := io.ReadAll(resp.Body)
+	drainAndClose(resp)
+	var body struct {
+		Status string `json:"status"`
+	}
+	_ = json.Unmarshal(b, &body)
+	if body.Status == "" {
+		return "unknown"
+	}
+	return body.Status
 }
 
 func checkQbitAPI(ctx context.Context, client *http.Client, baseUrl, port string, auth *config.Auth, authMayBeRequired bool) bool {
