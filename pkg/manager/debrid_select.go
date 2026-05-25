@@ -28,6 +28,94 @@ func (m *Manager) orderedDebridClients(selectedDebrid string) []debrid.Client {
 	return out
 }
 
+// orderedTorrentDebridClients returns torrent-eligible clients in config order.
+// Honors the per-debrid `allow_torrents` flag and the global `torrent_debrid` pin.
+func (m *Manager) orderedTorrentDebridClients(selectedDebrid string) []debrid.Client {
+	cfg := config.Get()
+	pin := selectedDebrid
+	if pin == "" {
+		pin = cfg.TorrentDebrid
+	}
+	out := make([]debrid.Client, 0, len(cfg.Debrids))
+	for _, dc := range cfg.Debrids {
+		if pin != "" && dc.Name != pin {
+			continue
+		}
+		if !dc.AllowsTorrents() {
+			continue
+		}
+		client := m.ProviderClient(dc.Name)
+		if client != nil {
+			out = append(out, client)
+		}
+	}
+	return out
+}
+
+// filterClientsBySlots returns only clients whose providers report enough free slots.
+// Providers with errors are skipped. Honors `minimum_free_slot` per debrid.
+func (m *Manager) filterClientsBySlots(clients []debrid.Client) []debrid.Client {
+	if len(clients) == 0 {
+		return clients
+	}
+	out := make([]debrid.Client, 0, len(clients))
+	for _, c := range clients {
+		dc := c.Config()
+		slots, err := c.GetAvailableSlots()
+		if err != nil {
+			m.logger.Debug().
+				Err(err).
+				Str("provider", dc.Name).
+				Msg("Could not determine available slots; skipping for selection")
+			continue
+		}
+		if slots <= dc.MinimumFreeSlot {
+			m.logger.Info().
+				Str("provider", dc.Name).
+				Int("slots", slots).
+				Int("minimum_free_slot", dc.MinimumFreeSlot).
+				Msg("Provider slot-exhausted; skipping for selection")
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// filterNZBClientsBySlots applies the same slot logic to the NZB-named client list,
+// using the underlying provider's GetAvailableSlots when available.
+func (m *Manager) filterNZBClientsBySlots(items []namedNZBClient) []namedNZBClient {
+	if len(items) == 0 {
+		return items
+	}
+	out := make([]namedNZBClient, 0, len(items))
+	for _, item := range items {
+		client := m.ProviderClient(item.name)
+		if client == nil {
+			continue
+		}
+		dc := client.Config()
+		slots, err := client.GetAvailableSlots()
+		if err != nil {
+			m.logger.Debug().
+				Err(err).
+				Str("provider", item.name).
+				Msg("Could not determine available NZB slots; skipping for selection")
+			continue
+		}
+		if slots <= dc.MinimumFreeSlot {
+			m.logger.Info().
+				Str("provider", item.name).
+				Int("slots", slots).
+				Int("minimum_free_slot", dc.MinimumFreeSlot).
+				Msg("Provider slot-exhausted; skipping for NZB selection")
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
 type cacheProbeResult struct {
 	client   debrid.Client
 	cached   bool

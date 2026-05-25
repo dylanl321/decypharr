@@ -42,6 +42,23 @@ When `usenet.backend` is `debrid`, Decypharr submits NZB files to Torbox, polls 
 
 Environment variables: `USENET__BACKEND=debrid`, `USENET__DEBRID=torbox`.
 
+### Dual-provider routing (RD torrents, Torbox NZBs)
+
+To run torrents on Real-Debrid and NZBs on Torbox without sending torrents to Torbox, use the per-debrid `allow_torrents` / `allow_nzbs` toggles:
+
+```json
+{
+  "debrids": [
+    { "name": "realdebrid", "provider": "realdebrid", "api_key": "...", "allow_torrents": true, "allow_nzbs": false },
+    { "name": "torbox",     "provider": "torbox",     "api_key": "...", "allow_torrents": false, "allow_nzbs": true, "minimum_free_slot": 1, "remove_on_complete": true }
+  ],
+  "usenet": { "backend": "debrid", "debrid": "torbox" },
+  "prefer_cached_provider": true
+}
+```
+
+Set Torbox `allow_torrents: true` and a higher `minimum_free_slot` if you want Torbox to act as a torrent fallback once Real-Debrid runs out of slots. Setting `remove_on_complete: true` on Torbox stops it from seeding completed downloads, freeing concurrent slots for new submissions.
+
 ## Provider Configuration
 
 ### Add NNTP Provider

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 func getEnv(key string) string {
@@ -106,6 +107,34 @@ func (c *Config) applyEnvOverrides() {
 
 	if nzbUserAgent := getEnv("NZB_USER_AGENT"); nzbUserAgent != "" {
 		c.NZBUserAgent = nzbUserAgent
+	}
+
+	if val := getEnv("TORRENT_DEBRID"); val != "" {
+		c.TorrentDebrid = val
+	}
+
+	if val := getEnv("CLEANUP_ON_COMPLETE__REMOVE_FROM_PROVIDER"); val != "" {
+		b := parseBool(val)
+		c.CleanupOnComplete.RemoveFromProvider = &b
+	}
+	if val := getEnv("CLEANUP_ON_COMPLETE__REMOVE_FROM_QUEUE"); val != "" {
+		b := parseBool(val)
+		c.CleanupOnComplete.RemoveFromQueue = &b
+	}
+	if val := getEnv("CLEANUP_ON_COMPLETE__DELAY"); val != "" {
+		c.CleanupOnComplete.Delay = val
+	}
+	if val := getEnv("CLEANUP_ON_COMPLETE__ACTIONS"); val != "" {
+		actions := []DownloadAction{}
+		for _, a := range strings.Split(val, ",") {
+			a = strings.TrimSpace(a)
+			if a != "" {
+				actions = append(actions, DownloadAction(a))
+			}
+		}
+		if len(actions) > 0 {
+			c.CleanupOnComplete.Actions = actions
+		}
 	}
 
 	c.applyMountEnvVars()

@@ -82,6 +82,60 @@
                 <label class="label cursor-pointer" for="skip_multi_season">Skip multi-season packs</label>
             </div>
         </div>
+        <div class="divider">Cleanup on complete</div>
+        <p class="text-sm opacity-70">After a download finishes locally, optionally remove it from the debrid provider (stops Torbox seeding, frees concurrent slots) and/or from Decypharr's queue.</p>
+        <div class="card bg-base-200/50">
+            <div class="card-body gap-4">
+                <label class="label cursor-pointer justify-start gap-3">
+                    <input type="checkbox" class="checkbox checkbox-primary"
+                           name="cleanup_on_complete.remove_from_provider" id="cleanup_on_complete.remove_from_provider">
+                    <div>
+                        <span class="font-medium">Remove from provider</span>
+                        <p class="text-sm opacity-70">Delete the entry from each debrid that holds it (per-debrid <code>remove_on_complete</code> overrides this).</p>
+                    </div>
+                </label>
+                <label class="label cursor-pointer justify-start gap-3">
+                    <input type="checkbox" class="checkbox checkbox-primary"
+                           name="cleanup_on_complete.remove_from_queue" id="cleanup_on_complete.remove_from_queue">
+                    <div>
+                        <span class="font-medium">Remove from queue</span>
+                        <p class="text-sm opacity-70">Delete the entry from Decypharr storage so completed items don't accumulate.</p>
+                    </div>
+                </label>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div>
+                        <label class="label" for="cleanup_on_complete.actions">
+                            <span class="font-medium">Allowed actions</span>
+                        </label>
+                        <input type="text" class="input w-full"
+                               name="cleanup_on_complete.actions" id="cleanup_on_complete.actions"
+                               placeholder="download">
+                        <span class="text-sm opacity-70">Comma-separated download actions eligible for cleanup. Defaults to <code>download</code>; symlink/strm need the provider copy alive.</span>
+                    </div>
+                    <div>
+                        <label class="label" for="cleanup_on_complete.delay">
+                            <span class="font-medium">Delay</span>
+                        </label>
+                        <input type="text" class="input w-full"
+                               name="cleanup_on_complete.delay" id="cleanup_on_complete.delay"
+                               placeholder="30s">
+                        <span class="text-sm opacity-70">Optional wait before running cleanup so *arr import can finish.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="divider">Routing</div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+                <label class="label" for="torrent_debrid">
+                    <span class="font-medium">Torrent debrid pin</span>
+                </label>
+                <input type="text" class="input w-full" name="torrent_debrid" id="torrent_debrid"
+                       placeholder="(empty = try all eligible)">
+                <span class="text-sm opacity-70">Optional: pin all torrent submissions to one debrid name (mirrors <code>usenet.debrid</code>).</span>
+            </div>
+        </div>
     </div>
 </div>
 {{ end }}

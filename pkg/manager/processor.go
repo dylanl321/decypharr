@@ -342,11 +342,18 @@ func (m *Manager) SendToDebrid(ctx context.Context, importRequest *ImportRequest
 		Files:    make(map[string]debridTypes.File),
 	}
 
-	clients := m.orderedDebridClients(importRequest.SelectedDebrid)
+	clients := m.orderedTorrentDebridClients(importRequest.SelectedDebrid)
 
 	if len(clients) == 0 {
 		return nil, fmt.Errorf("no debrid clients available")
 	}
+
+	eligible := m.filterClientsBySlots(clients)
+	if len(eligible) == 0 {
+		// All eligible providers are slot-exhausted — surface as retryable so the queue can backoff.
+		return nil, customerror.TooManyActiveDownloadsError
+	}
+	clients = eligible
 
 	if config.Get().PreferCached() {
 		if cached, ok := m.selectCachedProvider(ctx, importRequest.Magnet.InfoHash, clients); ok {
@@ -514,6 +521,12 @@ func (m *Manager) SendToNZBDebrid(ctx context.Context, importRequest *ImportRequ
 		return nil, fmt.Errorf("no NZB-capable debrid clients available")
 	}
 
+	eligible := m.filterNZBClientsBySlots(clients)
+	if len(eligible) == 0 {
+		return nil, customerror.TooManyActiveDownloadsError
+	}
+	clients = eligible
+
 	if config.Get().PreferCached() {
 		if cached, ok := m.selectCachedNZBProvider(ctx, hash, importRequest.SelectedDebrid); ok {
 			clients = []namedNZBClient{cached}
@@ -580,6 +593,9 @@ func (m *Manager) orderedNamedNZBClients(selectedDebrid string) []namedNZBClient
 	out := make([]namedNZBClient, 0, len(cfg.Debrids))
 	for _, dc := range cfg.Debrids {
 		if selectedDebrid != "" && dc.Name != selectedDebrid {
+			continue
+		}
+		if !dc.AllowsNZBs() {
 			continue
 		}
 		client, err := m.NZBProviderClient(dc.Name)

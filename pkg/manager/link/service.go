@@ -141,6 +141,17 @@ func (s *Service) fetchAndValidate(ctx context.Context, entry *storage.Entry, fi
 			} else if linkErr.ShouldRefetch() {
 				// Invalidate and refetch
 				return s.invalidateAndRefetch(ctx, entry, link, attempt)
+			} else if linkErr.ShouldRetry() {
+				// Retryable failures (e.g. HTTP 429, transient network errors) must NOT be cached:
+				// caching them turns a transient rate-limit into a permanent failure that requires manual
+				// queue surgery. Surface the error so the caller can back off and retry.
+				s.logger.Warn().
+					Err(linkErr).
+					Str("debrid", link.Debrid).
+					Str("filename", link.Filename).
+					Str("reason", linkErr.Code).
+					Msg("Transient link validation error; not caching")
+				return emptyDownloadLink, validationErr
 			}
 		}
 	}

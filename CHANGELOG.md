@@ -6,6 +6,20 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap**, 
 
 ### Added
 
+#### Multi-provider routing and slot limits
+
+- **Per-debrid protocol toggles:** `allow_torrents` and `allow_nzbs` opt each debrid in or out of torrent and NZB submissions. Defaults preserve current behavior — `allow_torrents` is `true` for all providers, `allow_nzbs` is `true` for Torbox and `false` for the others.
+- **Slot-aware provider selection:** `SendToDebrid` and `SendToNZBDebrid` now filter providers by `GetAvailableSlots()` against `minimum_free_slot` *before* submitting. When every eligible provider is exhausted, the request returns `too_many_active_downloads` and the queue retries.
+- **Torbox active-slot accounting:** `GetAvailableSlots()` queries `/api/torrents/mylist` and `/api/usenet/mylist`, subtracting active+seeding entries from the plan max plus any `additional_concurrent_slots`. Honors a new optional per-debrid `max_active_downloads` cap.
+- **Optional torrent debrid pin:** New global `torrent_debrid` field mirrors `usenet.debrid` for torrents — pin all torrent submissions to one provider name without reordering the debrids array.
+- **Post-completion cleanup:** New global `cleanup_on_complete` block (`remove_from_provider`, `remove_from_queue`, `actions`, `delay`) and per-debrid `remove_on_complete` flag automatically delete completed entries from the debrid (stops Torbox seeding, frees slots) and/or from Decypharr's queue. Cleanup is gated to `actions: ["download"]` by default to keep symlink/strm mounts intact.
+- **Config UI:** New per-debrid checkboxes (Allow torrents / Allow NZBs / Remove on complete) and `max_active_downloads` field; new global "Cleanup on complete" section and torrent debrid pin under Reliability & Queue.
+
+### Changed
+
+- **Torbox torrent permalinks:** `fetchDownloadLink` now sets `SkipValidation: true` to avoid burning API quota on HEAD validation against `/api/torrents/requestdl` redirects (matches the existing usenet permalink fix in `f9b8c22`).
+- **Transient link failures:** HTTP 429 and other retryable validation errors are no longer cached as permanent failures, and `markAsError` keeps such entries in the `downloading` state so the queue can retry instead of requiring manual cleanup.
+
 #### NZB debrid provider backend
 
 - **`usenet.backend`:** Global switch between direct NNTP (`nntp`, default) and debrid-mediated NZB downloads (`debrid`).

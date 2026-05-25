@@ -194,6 +194,63 @@ type Config struct {
 
 	// FailoverTimeoutHours switches to another provider when progress is flat for this long (0 = disabled).
 	FailoverTimeoutHours int `json:"failover_timeout_hours,omitempty"`
+
+	// TorrentDebrid optionally pins all torrent submissions to a single debrid name (mirrors usenet.debrid for torrents).
+	TorrentDebrid string `json:"torrent_debrid,omitempty"`
+
+	// CleanupOnComplete controls automatic removal from provider/queue after local completion.
+	CleanupOnComplete CleanupOnComplete `json:"cleanup_on_complete,omitzero"`
+}
+
+// CleanupOnComplete controls what happens after an entry finishes the local action.
+// Default behavior (zero value) is no cleanup.
+type CleanupOnComplete struct {
+	// RemoveFromProvider, when true, deletes the entry from every debrid that has a placement
+	// (subject to per-debrid `remove_on_complete` overrides). This stops Torbox seeding and frees concurrent slots.
+	RemoveFromProvider *bool `json:"remove_from_provider,omitempty"`
+	// RemoveFromQueue, when true, removes the entry from Decypharr's queue/storage after cleanup.
+	RemoveFromQueue *bool `json:"remove_from_queue,omitempty"`
+	// Actions limits which DownloadActions trigger cleanup. Default: ["download"] only — symlink/strm need the provider copy alive.
+	Actions []DownloadAction `json:"actions,omitempty"`
+	// Delay is an optional duration to wait after `completeEntry` before running cleanup (e.g. "30s") so *arr import can finish.
+	Delay string `json:"delay,omitempty"`
+}
+
+// EnabledForAction returns true if cleanup should run for the given action under any of the per-debrid
+// or global flags. If neither global flag is set, cleanup is disabled regardless of action.
+func (c CleanupOnComplete) EnabledForAction(action DownloadAction) bool {
+	if !c.RemovesFromProvider() && !c.RemovesFromQueue() {
+		return false
+	}
+	for _, a := range c.allowedActions() {
+		if a == action {
+			return true
+		}
+	}
+	return false
+}
+
+// RemovesFromProvider returns true if completed entries should be deleted from the debrid (global flag).
+func (c CleanupOnComplete) RemovesFromProvider() bool {
+	if c.RemoveFromProvider == nil {
+		return false
+	}
+	return *c.RemoveFromProvider
+}
+
+// RemovesFromQueue returns true if completed entries should be removed from Decypharr's queue.
+func (c CleanupOnComplete) RemovesFromQueue() bool {
+	if c.RemoveFromQueue == nil {
+		return false
+	}
+	return *c.RemoveFromQueue
+}
+
+func (c CleanupOnComplete) allowedActions() []DownloadAction {
+	if len(c.Actions) > 0 {
+		return c.Actions
+	}
+	return []DownloadAction{DownloadActionDownload}
 }
 
 func (c *Config) JsonFile() string {

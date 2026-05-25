@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -16,6 +17,8 @@ import (
 	grab "github.com/cavaliergopher/grab/v3"
 	"github.com/rs/zerolog"
 	"github.com/sirrobot01/decypharr/internal/config"
+	"github.com/sirrobot01/decypharr/internal/customerror"
+	"github.com/sirrobot01/decypharr/pkg/manager/link"
 	"github.com/sirrobot01/decypharr/pkg/notifications"
 	"github.com/sirrobot01/decypharr/pkg/storage"
 	"github.com/sourcegraph/conc/pool"
@@ -140,6 +143,7 @@ func (d *Downloader) completeEntry(entry *storage.Entry) {
 	d.markAsCompleted(entry)
 	d.notifyCompleted(entry)
 	d.triggerArrRefresh(entry)
+	go d.manager.maybeCleanupOnComplete(entry)
 }
 
 func (d *Downloader) markAsCompleted(entry *storage.Entry) {
@@ -177,6 +181,21 @@ func (d *Downloader) triggerArrRefresh(entry *storage.Entry) {
 
 func (d *Downloader) markAsError(entry *storage.Entry, err error) {
 	d.logger.Error().Err(err).Str("name", entry.Name).Msg("Failed to process action")
+
+	// Transient link/rate-limit failures should not poison the entry permanently.
+	// Leave the state as `downloading` with the error stamped on the entry so the next
+	// queue tick will retry instead of forcing a manual delete + re-add.
+	if isTransientDownloadError(err) {
+		now := time.Now()
+		entry.UpdatedAt = now
+		entry.IsDownloading = false
+		entry.LastError = err.Error()
+		entry.LastErrorTime = &now
+		entry.ErrorCount++
+		_ = d.manager.queue.Update(entry)
+		return
+	}
+
 	entry.MarkAsError(err)
 	_ = d.manager.queue.Update(entry)
 
@@ -189,6 +208,28 @@ func (d *Downloader) markAsError(entry *storage.Entry, err error) {
 		Message: msg,
 		Error:   err,
 	})
+}
+
+// isTransientDownloadError reports whether the given error indicates a temporary failure
+// that should self-heal on retry (HTTP 429, slot exhaustion, retryable link errors).
+func isTransientDownloadError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if linkErr := link.GetLinkError(err); linkErr != nil && linkErr.ShouldRetry() {
+		return true
+	}
+	var customErr *customerror.Error
+	if errors.As(err, &customErr) {
+		switch customErr.Code {
+		case "too_many_active_downloads":
+			return true
+		}
+		if customErr.IsRetryable() {
+			return true
+		}
+	}
+	return false
 }
 
 // processSymlink creates symlinks for torrent files

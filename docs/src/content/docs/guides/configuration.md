@@ -79,12 +79,66 @@ Array of Debrid services:
 | `proxy`                           | string | HTTP(S) proxy URL                                                | `""`                            |
 | `unpack_rar`                      | bool   | Auto-extract RAR archives                                        | `true`                          |
 | `minimum_free_slot`               | int    | Minimum free torrent slots to use this provider                  | `0`                             |
+| `max_active_downloads`            | int    | Optional cap on concurrent downloads (0 = use plan limit)         | `0`                             |
+| `allow_torrents`                  | bool   | Eligible for torrent submissions                                 | `true`                          |
+| `allow_nzbs`                      | bool   | Eligible for NZB submissions (only Torbox today)                 | `true` for Torbox, else `false` |
+| `remove_on_complete`              | bool   | Delete from this provider after local download finishes          | `false`                         |
 | `limit`                           | int    | Max torrents allowed on this provider                            | `0` (unlimited)                 |
 | `workers`                         | int    | Concurrent API workers                                           | Auto (CPU * 50 / num_providers) |
 | `torrents_refresh_interval`       | string | How often to refresh torrent list                                | `5m`                            |
 | `download_links_refresh_interval` | string | How often to refresh download links                              | `10m`                           |
 | `auto_expire_links_after`         | string | Auto-remove links after duration                                 | `24h`                           |
 | `user_agent`                      | string | Custom User-Agent header                                         | Default                         |
+
+### Multi-provider routing example
+
+Run torrents on Real-Debrid and NZBs on Torbox, with Torbox as a torrent overflow provider once Real-Debrid runs low on slots:
+
+```json
+{
+  "torrent_debrid": "",
+  "debrids": [
+    {
+      "name": "realdebrid",
+      "provider": "realdebrid",
+      "allow_torrents": true,
+      "allow_nzbs": false,
+      "minimum_free_slot": 0
+    },
+    {
+      "name": "torbox",
+      "provider": "torbox",
+      "allow_torrents": true,
+      "allow_nzbs": true,
+      "minimum_free_slot": 2,
+      "max_active_downloads": 10,
+      "remove_on_complete": true
+    }
+  ],
+  "usenet": { "backend": "debrid", "debrid": "torbox" },
+  "cleanup_on_complete": {
+    "remove_from_provider": false,
+    "remove_from_queue": false,
+    "actions": ["download"]
+  },
+  "prefer_cached_provider": true
+}
+```
+
+Set `allow_torrents: false` on Torbox to *strictly* keep torrents off Torbox. Raise `minimum_free_slot` instead to make it a fallback only.
+
+### Cleanup on complete
+
+After a download finishes locally, optionally delete the entry from the debrid provider (stops Torbox seeding and frees concurrent slots) and/or from Decypharr's queue:
+
+| Field                                 | Type    | Description                                                                                | Default        |
+|---------------------------------------|---------|--------------------------------------------------------------------------------------------|----------------|
+| `cleanup_on_complete.remove_from_provider` | bool    | Delete from each debrid that holds the entry (per-debrid `remove_on_complete` overrides this) | `false`        |
+| `cleanup_on_complete.remove_from_queue`    | bool    | Remove from Decypharr's queue/storage                                                     | `false`        |
+| `cleanup_on_complete.actions`              | array   | Download actions eligible for cleanup; `symlink`/`strm` need the provider copy alive      | `["download"]` |
+| `cleanup_on_complete.delay`                | string  | Optional wait (e.g. `30s`) before running cleanup so *arr import can finish               | `""`           |
+
+The global `torrent_debrid` field, when set, pins all torrent submissions to one debrid name (mirrors `usenet.debrid` for torrents). Per-`*arr` `selected_debrid` still wins over the pin.
 
 ## Usenet
 

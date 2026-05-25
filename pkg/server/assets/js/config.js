@@ -518,6 +518,15 @@ class ConfigManager {
                                        placeholder="1" value="1">
                                 <span class="text-sm opacity-70">Minimum free slot for this debrid</span>
                             </div>
+                            <div>
+                                <label class="label" for="debrid[${index}].max_active_downloads">
+                                    <span class=" font-medium">Max Active Downloads</span>
+                                </label>
+                                <input type="number" class="input w-full"
+                                       name="debrid[${index}].max_active_downloads" id="debrid[${index}].max_active_downloads"
+                                       placeholder="0">
+                                <span class="text-sm opacity-70">Optional cap on concurrent downloads (0 = use plan limit)</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -584,6 +593,38 @@ class ConfigManager {
                              <div>
                                 <span class="font-medium">Unpack RAR</span>
                                 <div class="label-text-alt">Preprocess RAR files</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+                    <div>
+                        <label class="label cursor-pointer justify-start gap-2">
+                            <input type="checkbox" class="checkbox checkbox-primary"
+                                   name="debrid[${index}].allow_torrents" id="debrid[${index}].allow_torrents" checked>
+                            <div>
+                                <span class="font-medium">Allow Torrents</span>
+                                <div class="label-text-alt">Eligible for torrent submissions</div>
+                            </div>
+                        </label>
+                    </div>
+                    <div>
+                        <label class="label cursor-pointer justify-start gap-2">
+                            <input type="checkbox" class="checkbox checkbox-primary"
+                                   name="debrid[${index}].allow_nzbs" id="debrid[${index}].allow_nzbs">
+                            <div>
+                                <span class="font-medium">Allow NZBs</span>
+                                <div class="label-text-alt">Eligible for NZB submissions (Torbox-only today)</div>
+                            </div>
+                        </label>
+                    </div>
+                    <div>
+                        <label class="label cursor-pointer justify-start gap-2">
+                            <input type="checkbox" class="checkbox checkbox-primary"
+                                   name="debrid[${index}].remove_on_complete" id="debrid[${index}].remove_on_complete">
+                            <div>
+                                <span class="font-medium">Remove on Complete</span>
+                                <div class="label-text-alt">Delete from this provider when local download finishes</div>
                             </div>
                         </label>
                     </div>
@@ -1194,7 +1235,25 @@ class ConfigManager {
             skip_multi_season: document.getElementById('skip_multi_season')?.checked || false,
             categories: (document.getElementById('categories')?.value || '')
                 .split(',').map((c) => c.trim()).filter(Boolean),
+            torrent_debrid: document.getElementById('torrent_debrid')?.value || '',
+            cleanup_on_complete: this.collectCleanupOnComplete(),
         };
+    }
+
+    collectCleanupOnComplete() {
+        const out = {};
+        const fromProvider = document.getElementById('cleanup_on_complete.remove_from_provider');
+        const fromQueue = document.getElementById('cleanup_on_complete.remove_from_queue');
+        const actions = document.getElementById('cleanup_on_complete.actions');
+        const delay = document.getElementById('cleanup_on_complete.delay');
+        if (fromProvider) out.remove_from_provider = fromProvider.checked;
+        if (fromQueue) out.remove_from_queue = fromQueue.checked;
+        if (delay && delay.value) out.delay = delay.value;
+        if (actions && actions.value) {
+            const arr = actions.value.split(',').map((a) => a.trim()).filter(Boolean);
+            if (arr.length) out.actions = arr;
+        }
+        return out;
     }
 
     populateReliabilitySettings(config) {
@@ -1217,6 +1276,22 @@ class ConfigManager {
             if (catEl) catEl.value = config.categories.join(', ');
         }
         this.populateCategoryPaths(config.category_paths || {});
+
+        const torrentDebridEl = document.getElementById('torrent_debrid');
+        if (torrentDebridEl) torrentDebridEl.value = config.torrent_debrid || '';
+
+        this.populateCleanupOnComplete(config.cleanup_on_complete || {});
+    }
+
+    populateCleanupOnComplete(cfg) {
+        const fromProvider = document.getElementById('cleanup_on_complete.remove_from_provider');
+        const fromQueue = document.getElementById('cleanup_on_complete.remove_from_queue');
+        const actions = document.getElementById('cleanup_on_complete.actions');
+        const delay = document.getElementById('cleanup_on_complete.delay');
+        if (fromProvider) fromProvider.checked = !!cfg.remove_from_provider;
+        if (fromQueue) fromQueue.checked = !!cfg.remove_from_queue;
+        if (actions) actions.value = Array.isArray(cfg.actions) ? cfg.actions.join(', ') : '';
+        if (delay) delay.value = cfg.delay || '';
     }
 
     populateCategoryPaths(paths) {
@@ -1342,6 +1417,7 @@ class ConfigManager {
             const repairRateLimitInput = getField('repair_rate_limit');
             const downloadRateLimitInput = getField('download_rate_limit');
             const minimumFreeSlotInput = getField('minimum_free_slot');
+            const maxActiveDownloadsInput = getField('max_active_downloads');
             const proxyInput = getField('proxy');
             const downloadUncachedInput = getField('download_uncached');
             const unpackRarInput = getField('unpack_rar');
@@ -1351,6 +1427,9 @@ class ConfigManager {
             const torrentsRefreshIntervalInput = getField('torrents_refresh_interval');
             const downloadLinksRefreshIntervalInput = getField('download_links_refresh_interval');
             const autoExpireLinksAfterInput = getField('auto_expire_links_after');
+            const allowTorrentsInput = getField('allow_torrents');
+            const allowNZBsInput = getField('allow_nzbs');
+            const removeOnCompleteInput = getField('remove_on_complete');
 
             if (!nameInput || !providerInput || !apiKeyInput || !rateLimitInput || !repairRateLimitInput || !downloadRateLimitInput ||
                 !minimumFreeSlotInput || !proxyInput || !downloadUncachedInput || !unpackRarInput || !addSamplesInput ||
@@ -1366,12 +1445,23 @@ class ConfigManager {
                 repair_rate_limit: repairRateLimitInput.value,
                 download_rate_limit: downloadRateLimitInput.value,
                 minimum_free_slot: parseInt(minimumFreeSlotInput.value) || 0,
+                max_active_downloads: maxActiveDownloadsInput ? (parseInt(maxActiveDownloadsInput.value) || 0) : 0,
                 proxy: proxyInput.value,
                 download_uncached: downloadUncachedInput.checked,
                 unpack_rar: unpackRarInput.checked,
                 add_samples: addSamplesInput.checked,
                 user_agent: userAgentInput.value
             };
+
+            if (allowTorrentsInput) {
+                debrid.allow_torrents = allowTorrentsInput.checked;
+            }
+            if (allowNZBsInput) {
+                debrid.allow_nzbs = allowNZBsInput.checked;
+            }
+            if (removeOnCompleteInput) {
+                debrid.remove_on_complete = removeOnCompleteInput.checked;
+            }
 
             // Handle download API keys
             if (downloadKeysTextarea && downloadKeysTextarea.value.trim()) {

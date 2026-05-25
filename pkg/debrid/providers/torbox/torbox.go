@@ -44,6 +44,7 @@ type Torbox struct {
 	client                *request.Client
 	logger                zerolog.Logger
 	Profile               *types.Profile
+	additionalSlots       int
 	config                config.Debrid
 	downloadPresentCache  sync.Map
 	downloadPresentMu     sync.Mutex
@@ -501,6 +502,9 @@ func (tb *Torbox) fetchDownloadLink(account *account.Account, id string, file *t
 		Id:           file.Id,
 		Generated:    now,
 		ExpiresAt:    now.Add(tb.autoExpiresLinksAfter),
+		// Torbox /requestdl permalinks redirect to a CDN URL — HEAD validation against the permalink itself
+		// burns API quota and triggers 429s. The redirect target is exercised by actual reads, so skip pre-flight checks.
+		SkipValidation: true,
 	}
 	return dl, nil
 }
@@ -630,16 +634,71 @@ func (tb *Torbox) CheckFile(ctx context.Context, infohash, link string) error {
 }
 
 func (tb *Torbox) GetAvailableSlots() (int, error) {
-	var accountSlots = 1
 	profile, err := tb.GetProfile()
 	if err != nil {
 		return 0, err
 	}
 
+	planMax := 1
 	if slots, ok := planSlots[profile.Type]; ok {
-		accountSlots = slots
+		planMax = slots
 	}
-	return accountSlots, nil
+
+	cap := tb.activeSlotCap(planMax)
+
+	active, err := tb.activeUsageCount()
+	if err != nil {
+		return 0, err
+	}
+
+	available := cap - active
+	if available < 0 {
+		available = 0
+	}
+	return available, nil
+}
+
+// activeSlotCap resolves the effective concurrent-slot ceiling for the account.
+// It includes any additional concurrent slots from the plan info and respects the
+// optional `max_active_downloads` config cap.
+func (tb *Torbox) activeSlotCap(planMax int) int {
+	cap := planMax + tb.additionalSlots
+	if tb.config.MaxActiveDownloads > 0 && tb.config.MaxActiveDownloads < cap {
+		cap = tb.config.MaxActiveDownloads
+	}
+	return cap
+}
+
+// activeUsageCount returns the number of active+seeding torrents and active usenet downloads on the account.
+// Used to determine how many concurrent slots are currently consumed.
+func (tb *Torbox) activeUsageCount() (int, error) {
+	active := 0
+
+	var torrentList TorrentsListResponse
+	if _, err := tb.doGet("/api/torrents/mylist", map[string]string{"bypass_cache": "true"}, &torrentList); err != nil {
+		return 0, fmt.Errorf("failed to list torrents for slot count: %w", err)
+	}
+	if torrentList.Data != nil {
+		for _, t := range *torrentList.Data {
+			if t.Active || !t.DownloadFinished {
+				active++
+			}
+		}
+	}
+
+	var usenetList UsenetListResponse
+	if _, err := tb.doGet("/api/usenet/mylist", map[string]string{"bypass_cache": "true"}, &usenetList); err != nil {
+		return 0, fmt.Errorf("failed to list usenet for slot count: %w", err)
+	}
+	if usenetList.Data != nil {
+		for _, u := range *usenetList.Data {
+			if u.Active || !u.DownloadFinished {
+				active++
+			}
+		}
+	}
+
+	return active, nil
 }
 
 func (tb *Torbox) GetProfile() (*types.Profile, error) {
@@ -687,6 +746,7 @@ func (tb *Torbox) GetProfile() (*types.Profile, error) {
 	}
 
 	tb.Profile = profile
+	tb.additionalSlots = int(userData.AdditionalConcurrentSlots)
 
 	return profile, nil
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strconv"
 )
 
 type Debrid struct {
@@ -24,6 +25,14 @@ type Debrid struct {
 	Workers                      int      `json:"workers,omitempty"`
 	AutoExpireLinksAfter         string   `json:"auto_expire_links_after,omitempty"`
 	UserAgent                    string   `json:"user_agent,omitempty"`
+
+	// Routing capabilities. Pointers so an unset value can fall back to provider-specific defaults.
+	AllowTorrents      *bool `json:"allow_torrents,omitempty"`       // default true
+	AllowNZBs          *bool `json:"allow_nzbs,omitempty"`           // default true for NZB-capable providers (torbox), false otherwise
+	MaxActiveDownloads int   `json:"max_active_downloads,omitempty"` // optional cap; 0 = use provider plan limit
+
+	// Post-completion cleanup
+	RemoveOnComplete *bool `json:"remove_on_complete,omitempty"` // delete from this provider after local completion to free slots / stop seeding
 
 	// Folder
 	Folder        string `json:"folder,omitempty"`          // Deprecated. Use Mount MountPath instead.
@@ -68,7 +77,42 @@ func (c *Config) updateDebrid(d Debrid) Debrid {
 		d.AutoExpireLinksAfter = DefaultAutoExpireLinksAfter
 	}
 
+	if d.AllowTorrents == nil {
+		t := true
+		d.AllowTorrents = &t
+	}
+	if d.AllowNZBs == nil {
+		// NZB capability follows provider type today: only Torbox supports debrid-backed NZBs.
+		nzb := d.Provider == "torbox"
+		d.AllowNZBs = &nzb
+	}
+
 	return d
+}
+
+// AllowsTorrents returns true if this debrid is eligible for torrent submissions.
+func (d Debrid) AllowsTorrents() bool {
+	if d.AllowTorrents == nil {
+		return true
+	}
+	return *d.AllowTorrents
+}
+
+// AllowsNZBs returns true if this debrid is eligible for NZB submissions.
+// Defaults to true for torbox (currently the only NZB-capable provider) and false otherwise.
+func (d Debrid) AllowsNZBs() bool {
+	if d.AllowNZBs == nil {
+		return d.Provider == "torbox"
+	}
+	return *d.AllowNZBs
+}
+
+// RemovesOnComplete returns true if this debrid should auto-delete its placement after local completion.
+func (d Debrid) RemovesOnComplete() bool {
+	if d.RemoveOnComplete == nil {
+		return false
+	}
+	return *d.RemoveOnComplete
 }
 
 func validateDebrids(debrids []Debrid) error {
@@ -109,6 +153,28 @@ func (c *Config) applyDebridEnvVars() {
 			}
 			if proxy := getEnv(prefix + "PROXY"); proxy != "" {
 				c.Debrids[i].Proxy = proxy
+			}
+			if val := getEnv(prefix + "ALLOW_TORRENTS"); val != "" {
+				b := parseBool(val)
+				c.Debrids[i].AllowTorrents = &b
+			}
+			if val := getEnv(prefix + "ALLOW_NZBS"); val != "" {
+				b := parseBool(val)
+				c.Debrids[i].AllowNZBs = &b
+			}
+			if val := getEnv(prefix + "MAX_ACTIVE_DOWNLOADS"); val != "" {
+				if n, err := strconv.Atoi(val); err == nil {
+					c.Debrids[i].MaxActiveDownloads = n
+				}
+			}
+			if val := getEnv(prefix + "MINIMUM_FREE_SLOT"); val != "" {
+				if n, err := strconv.Atoi(val); err == nil {
+					c.Debrids[i].MinimumFreeSlot = n
+				}
+			}
+			if val := getEnv(prefix + "REMOVE_ON_COMPLETE"); val != "" {
+				b := parseBool(val)
+				c.Debrids[i].RemoveOnComplete = &b
 			}
 		}
 	}

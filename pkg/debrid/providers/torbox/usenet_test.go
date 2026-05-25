@@ -64,7 +64,7 @@ func TestGetNZBMapsDownloadedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	tb := client.(*Torbox)
+	tb := client
 	tb.Host = server.URL
 
 	dl, err := tb.GetNZB("42")
@@ -98,7 +98,7 @@ func TestIsNZBAvailableCached(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	tb := client.(*Torbox)
+	tb := client
 	tb.Host = server.URL
 
 	avail := tb.IsNZBAvailable([]string{"HASH1"})
@@ -112,7 +112,7 @@ func TestSupportsNZB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if !client.(interface{ SupportsNZB() bool }).SupportsNZB() {
+	if !client.SupportsNZB() {
 		t.Fatal("expected torbox client to support NZB")
 	}
 }
