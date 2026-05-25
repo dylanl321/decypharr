@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -206,7 +207,7 @@ func (q *Queue) ListFilterFunc(category string, protocol config.Protocol, state 
 	var filterFunc func(*storage.Entry) bool
 	if category != "" || len(hashes) != 0 || state != "" || protocol != config.ProtocolAll {
 		filterFunc = func(t *storage.Entry) bool {
-			if category != "" && t.Category != category {
+			if category != "" && !strings.EqualFold(t.Category, category) {
 				return false
 			}
 			if state != "" && t.State != state {
