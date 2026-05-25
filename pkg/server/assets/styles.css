@@ -1015,6 +1015,36 @@ html.sidebar-collapsed .app-main {
     white-space: nowrap;
 }
 
+/* Sortable table headers */
+.sortable-th {
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.12s ease;
+}
+
+.sortable-th:hover {
+    background: var(--color-base-300, rgba(0, 0, 0, 0.05));
+}
+
+.sortable-th[data-active="true"] {
+    color: var(--color-primary, #6366f1);
+}
+
+.sortable-th .th-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.sortable-th .sort-indicator {
+    font-size: 0.7rem;
+    opacity: 0.5;
+}
+
+.sortable-th[data-active="true"] .sort-indicator {
+    opacity: 1;
+}
+
 /* =====================================================================
    Density toggle
    ===================================================================== */

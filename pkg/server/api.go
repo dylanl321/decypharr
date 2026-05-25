@@ -339,10 +339,14 @@ func sortQueuedTorrents(torrents []*storage.Entry, sortBy, sortOrder string) {
 			result = torrents[i].AddedOn.Before(torrents[j].AddedOn)
 		case "progress":
 			result = torrents[i].Progress < torrents[j].Progress
+		case "speed":
+			result = torrents[i].Speed < torrents[j].Speed
 		case "category":
 			result = strings.ToLower(torrents[i].Category) < strings.ToLower(torrents[j].Category)
 		case "state":
 			result = torrents[i].State < torrents[j].State
+		case "provider", "debrid":
+			result = strings.ToLower(torrents[i].ActiveProvider) < strings.ToLower(torrents[j].ActiveProvider)
 		default:
 			result = torrents[i].AddedOn.Before(torrents[j].AddedOn)
 		}

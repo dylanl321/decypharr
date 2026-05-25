@@ -167,11 +167,31 @@ class TorrentDashboard {
                 this.state.sortOrder = 'desc';
             }
             this.state.currentPage = 1;
+            this.updateSortIndicators();
             this.loadTorrents();
         });
 
         // Context menu
         this.bindContextMenu();
+
+        // Sortable column headers
+        document.querySelectorAll('.sortable-th').forEach((th) => {
+            th.addEventListener('click', () => {
+                const field = th.dataset.sort;
+                if (!field) return;
+                if (this.state.sortBy === field) {
+                    this.state.sortOrder = this.state.sortOrder === 'asc' ? 'desc' : 'asc';
+                } else {
+                    this.state.sortBy = field;
+                    this.state.sortOrder = (field === 'name' || field === 'category') ? 'asc' : 'desc';
+                }
+                this.state.currentPage = 1;
+                this.syncSortSelector();
+                this.updateSortIndicators();
+                this.loadTorrents();
+            });
+        });
+        this.updateSortIndicators();
 
         // Density toggle
         if (this.refs.densityCozy) {
@@ -290,7 +310,7 @@ class TorrentDashboard {
 
         const actions = {
             'open-timeline': async () => {
-                this.timeline.open({ hash: torrent.hash, name: torrent.name, debrid: torrent.debrid });
+                this.timeline.open({ hash: torrent.hash, name: torrent.name, debrid: torrent.debrid || torrent.active_provider });
             },
             'copy-magnet': async () => {
                 try {
@@ -399,7 +419,7 @@ class TorrentDashboard {
 
     renderTorrents() {
         const list = this.state.providerFilter
-            ? this.state.torrents.filter(t => (t.debrid || '') === this.state.providerFilter)
+            ? this.state.torrents.filter(t => ((t.debrid || t.active_provider || '')) === this.state.providerFilter)
             : this.state.torrents;
 
         if (list.length === 0) {
@@ -409,8 +429,9 @@ class TorrentDashboard {
 
         this.refs.torrentsList.innerHTML = list.map(torrent => {
             const isSelected = this.state.selectedEntries.has(torrent.info_hash);
-            const provSlug = window.providerSlug(torrent.debrid);
-            const provColor = window.providerColor(torrent.debrid);
+            const provider = torrent.debrid || torrent.active_provider || '';
+            const provSlug = window.providerSlug(provider);
+            const provColor = window.providerColor(provider);
             const protoIcon = torrent.protocol === 'nzb' ? 'bi-newspaper' : 'bi-magnet';
             return `
                 <tr class="hover prov-stripe" data-hash="${torrent.info_hash}"
@@ -433,10 +454,10 @@ class TorrentDashboard {
                         </div>
                     </td>
                     <td>
-                        ${torrent.debrid ? `
+                        ${provider ? `
                             <span class="prov-chip" data-prov="${provSlug}" data-active="true"
                                   style="--prov-color:${provColor}">
-                                <span class="prov-chip-dot"></span>${this.escapeHtml(torrent.debrid)}
+                                <span class="prov-chip-dot"></span>${this.escapeHtml(provider)}
                             </span>` : '<span class="text-xs opacity-50">—</span>'}
                     </td>
                     <td class="size-cell">
@@ -725,6 +746,34 @@ class TorrentDashboard {
             this.loadTorrents();
             this.loadSummary();
         }, 10000); // Refresh every 10 seconds
+    }
+
+    updateSortIndicators() {
+        document.querySelectorAll('.sortable-th').forEach((th) => {
+            const field = th.dataset.sort;
+            const indicator = th.querySelector('.sort-indicator');
+            if (!indicator) return;
+            indicator.classList.remove('bi-caret-up-fill', 'bi-caret-down-fill', 'bi-arrow-down-up');
+            if (field === this.state.sortBy) {
+                indicator.classList.add(this.state.sortOrder === 'asc' ? 'bi-caret-up-fill' : 'bi-caret-down-fill');
+                th.setAttribute('data-active', 'true');
+            } else {
+                indicator.classList.add('bi-arrow-down-up');
+                th.removeAttribute('data-active');
+            }
+        });
+    }
+
+    syncSortSelector() {
+        if (!this.refs.sortSelector) return;
+        const { sortBy, sortOrder } = this.state;
+        const optionWithSuffix = `${sortBy}_${sortOrder}`;
+        const opts = Array.from(this.refs.sortSelector.options).map((o) => o.value);
+        if (opts.includes(optionWithSuffix)) {
+            this.refs.sortSelector.value = optionWithSuffix;
+        } else if (opts.includes(sortBy)) {
+            this.refs.sortSelector.value = sortBy;
+        }
     }
 
     // Utility methods
