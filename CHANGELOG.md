@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes from the **Decypharr reliability and dual-debrid roadmap** and **API enhancement** work.
+All notable changes from the **Decypharr reliability and dual-debrid roadmap**, **API enhancements**, and **web UI** work.
 
 ## [Unreleased]
 
@@ -191,8 +191,11 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap** a
 - **`pkg/arr/arr.go`:** `Get()` falls back to `strings.EqualFold`; `GetOrCreate()` delegates to `Get()` before creating a manual entry.
 - **`pkg/manager/queue.go`:** qBit-compat torrent list filters categories with `EqualFold` (e.g. Sonarr polls `sonarr`, entries stored as `Sonarr`).
 - **`pkg/server/qbit/context.go`:** Config Arr lookup in `authenticate()` uses `EqualFold` for `download_uncached` inheritance.
+- **`pkg/server/api.go`:** Dashboard torrent list category filter uses `EqualFold`.
 
-#### REST API enhancements (feature/api-enhancements)
+### Added
+
+#### REST API enhancements (merged from feature/api-enhancements)
 
 #### Health & Monitoring
 - `GET /api/health` — Component-level health checks with latency measurements
