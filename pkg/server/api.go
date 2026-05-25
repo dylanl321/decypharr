@@ -258,8 +258,8 @@ func (s *Server) handleGetTorrents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Category filter
-		if category != "" && t.Category != category {
+		// Category filter (case-insensitive for Sonarr/Radarr lowercase categories)
+		if category != "" && !strings.EqualFold(t.Category, category) {
 			continue
 		}
 

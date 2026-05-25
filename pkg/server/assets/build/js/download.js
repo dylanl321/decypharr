@@ -59,7 +59,13 @@ class DownloadManager {
         const hint = document.getElementById('categoryPathHint');
         if (!hint) return;
         const cat = this.refs.arr.value;
-        const path = this.categoryPaths?.[cat] || this.categoryPaths?.[cat?.toLowerCase()];
+        let path;
+        if (cat && this.categoryPaths) {
+            const key = Object.keys(this.categoryPaths).find(
+                (k) => k.toLowerCase() === cat.toLowerCase()
+            );
+            path = key ? this.categoryPaths[key] : undefined;
+        }
         if (path) {
             hint.textContent = `Category path: ${path}`;
             hint.classList.remove('opacity-70');

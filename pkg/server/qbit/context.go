@@ -151,7 +151,7 @@ func (q *QBit) authenticate(category, username, password string) (*arr.Arr, erro
 		// leave nil so SendToDebrid falls back to the debrid provider's setting.
 		var downloadUncached *bool
 		for _, cfgArr := range config.Get().Arrs {
-			if cfgArr.Name == category {
+			if strings.EqualFold(cfgArr.Name, category) {
 				downloadUncached = cfgArr.DownloadUncached
 				break
 			}
