@@ -236,15 +236,16 @@ func (tb *Torbox) fetchUsenetDownloadLink(account *account.Account, id string, f
 	downloadURL := fmt.Sprintf("%s/api/usenet/requestdl?%s", tb.Host, query.Encode())
 	now := time.Now()
 	return types.DownloadLink{
-		Filename:     file.Name,
-		Size:         file.Size,
-		Token:        tb.APIKey,
-		Link:         file.Link,
-		DownloadLink: downloadURL,
-		Debrid:       tb.config.Name,
-		Id:           file.Id,
-		Generated:    now,
-		ExpiresAt:    now.Add(tb.autoExpiresLinksAfter),
+		Filename:       file.Name,
+		Size:           file.Size,
+		Token:          tb.APIKey,
+		Link:           file.Link,
+		DownloadLink:   downloadURL,
+		Debrid:         tb.config.Name,
+		Id:             file.Id,
+		Generated:      now,
+		ExpiresAt:      now.Add(tb.autoExpiresLinksAfter),
+		SkipValidation: true, // Permalink-style URL — HEAD validation wastes API quota
 	}, nil
 }
 

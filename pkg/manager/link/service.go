@@ -364,6 +364,11 @@ func (s *Service) validateLink(ctx context.Context, link *types.DownloadLink) er
 		return NewPermanentError(fmt.Errorf("download url is empty for %s||%s", link.Filename, link.Link), "empty_link")
 	}
 
+	// Skip HEAD validation for permalink-style URLs (e.g. TorBox usenet requestdl)
+	if link.SkipValidation {
+		return nil
+	}
+
 	req, err := http.NewRequestWithContext(ctx, "HEAD", link.DownloadLink, nil)
 	if err != nil {
 		return NewPermanentError(

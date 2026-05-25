@@ -149,15 +149,16 @@ type Profile struct {
 }
 
 type DownloadLink struct {
-	Debrid       string    `json:"debrid"`
-	Token        string    `json:"token"`
-	Filename     string    `json:"filename"`
-	Link         string    `json:"link"`
-	DownloadLink string    `json:"download_link"`
-	Generated    time.Time `json:"generated"`
-	Size         int64     `json:"size"`
-	Id           string    `json:"id"`
-	ExpiresAt    time.Time
+	Debrid         string    `json:"debrid"`
+	Token          string    `json:"token"`
+	Filename       string    `json:"filename"`
+	Link           string    `json:"link"`
+	DownloadLink   string    `json:"download_link"`
+	Generated      time.Time `json:"generated"`
+	Size           int64     `json:"size"`
+	Id             string    `json:"id"`
+	ExpiresAt      time.Time
+	SkipValidation bool `json:"-"` // Skip HEAD validation for permalink-style URLs (e.g. TorBox usenet requestdl)
 }
 
 func (dl *DownloadLink) Valid() error {
