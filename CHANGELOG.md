@@ -53,6 +53,12 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap**, 
 
 ### Fixed
 
+#### Provider 451 (DMCA) blocks abort the whole submit
+
+- **Root cause:** When `prefer_cached_provider` selected one cached debrid, `SendToDebrid` replaced the eligible client list with that single provider. If that provider returned HTTP 451 (Unavailable For Legal Reasons / DMCA takedown), the submit failed immediately and Sonarr/Radarr saw a `400 BadRequest` even though another configured provider could have served the torrent.
+- **Fallback restored:** The cached provider is now promoted to the front of the eligible list while the remaining providers stay as fallback, so a single-provider 451 (or any provider-specific failure) cleanly falls through to the next debrid.
+- **Typed error:** New `customerror.ContentBlockedError` (HTTP 451, code `content_blocked`, `Permanent`) is returned by RealDebrid's `addTorrent`/`addMagnet` and TorBox's `SubmitMagnet` instead of a generic `unexpected status code`. Submit failures now log a `Submit failed; trying next provider if available` warning so the fallthrough is visible.
+
 #### Stuck at 100% without HTTP pull (#1, #3)
 
 - **Root cause:** When debrid reported completion, `processAction` set `IsDownloading=true` for the local HTTP pull. If the pull failed (commonly because `files` was still empty), the error was logged but `IsDownloading` was never cleared, so `processQueuedEntries` skipped the entry indefinitely.

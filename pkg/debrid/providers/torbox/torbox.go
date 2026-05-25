@@ -243,6 +243,9 @@ func (tb *Torbox) SubmitMagnet(torrent *types.Torrent) (*types.Torrent, error) {
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if resp.StatusCode == http.StatusUnavailableForLegalReasons {
+			return nil, customerror.ContentBlockedError
+		}
 		return nil, fmt.Errorf("torbox API error: Status: %d", resp.StatusCode)
 	}
 	if data.Data == nil {

@@ -359,7 +359,17 @@ func (m *Manager) SendToDebrid(ctx context.Context, importRequest *ImportRequest
 
 	if config.Get().PreferCached() {
 		if cached, ok := m.selectCachedProvider(ctx, importRequest.Magnet.InfoHash, clients); ok {
-			clients = []common.Client{cached}
+			// Promote the cached provider to be tried first, but keep the
+			// remaining providers as fallback so a provider-specific failure
+			// (e.g. 451 DMCA block) still falls through to others.
+			reordered := make([]common.Client, 0, len(clients))
+			reordered = append(reordered, cached)
+			for _, c := range clients {
+				if c.Config().Name != cached.Config().Name {
+					reordered = append(reordered, c)
+				}
+			}
+			clients = reordered
 		}
 	}
 
@@ -385,6 +395,13 @@ func (m *Manager) SendToDebrid(ctx context.Context, importRequest *ImportRequest
 
 		dbt, err := db.SubmitMagnet(debridTorrent)
 		if err != nil || dbt == nil || dbt.Id == "" {
+			if err != nil {
+				_logger.Warn().
+					Err(err).
+					Str("provider", db.Config().Name).
+					Str("hash", debridTorrent.InfoHash).
+					Msg("Submit failed; trying next provider if available")
+			}
 			errs = append(errs, err)
 			continue
 		}

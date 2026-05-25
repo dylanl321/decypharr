@@ -31,3 +31,13 @@ var TooManyActiveDownloadsError = (&Error{
 	err:        errors.New("too many active downloads"),
 	Code:       "too_many_active_downloads",
 }).Retryable() // slot exhaustion is transient — retry after backoff
+
+// ContentBlockedError represents HTTP 451 Unavailable For Legal Reasons,
+// returned by debrid providers when a specific torrent is blocked due to
+// DMCA / copyright takedowns. The block is provider-specific, so callers
+// should fall back to the next configured provider rather than retrying.
+var ContentBlockedError = (&Error{
+	statusCode: 451,
+	err:        errors.New("content unavailable for legal reasons on this provider"),
+	Code:       "content_blocked",
+}).Permanent()

@@ -473,6 +473,9 @@ func (r *RealDebrid) addTorrent(t *types.Torrent) (*types.Torrent, error) {
 		if resp.StatusCode == 509 {
 			return nil, customerror.TooManyActiveDownloadsError
 		}
+		if resp.StatusCode == http.StatusUnavailableForLegalReasons {
+			return nil, customerror.ContentBlockedError
+		}
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
@@ -501,6 +504,9 @@ func (r *RealDebrid) addMagnet(t *types.Torrent) (*types.Torrent, error) {
 
 	case 509:
 		return nil, customerror.TooManyActiveDownloadsError
+
+	case http.StatusUnavailableForLegalReasons:
+		return nil, customerror.ContentBlockedError
 
 	default:
 		return nil, fmt.Errorf("realdebrid API error: Status: %d", resp.StatusCode)
