@@ -119,6 +119,8 @@ const (
 	TimelineQueued             TimelineEventKind = "queued"
 	TimelineDebridSubmitted    TimelineEventKind = "debrid_submitted"
 	TimelineDebridReady        TimelineEventKind = "debrid_ready"
+	TimelineProviderBlocked    TimelineEventKind = "provider_blocked"
+	TimelineProviderSkipped    TimelineEventKind = "provider_skipped"
 	TimelineLocalDownloadStart TimelineEventKind = "local_download_start"
 	TimelineLocalDownloadDone  TimelineEventKind = "local_download_done"
 	TimelineSymlinked          TimelineEventKind = "symlinked"

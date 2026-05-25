@@ -1289,6 +1289,8 @@ html[data-density="compact"] .card-body {
 .timeline-item[data-kind="symlinked"] .timeline-marker,
 .timeline-item[data-kind="imported"] .timeline-marker { border-color: var(--color-success, #22c55e); color: var(--color-success, #22c55e); }
 .timeline-item[data-kind="error"] .timeline-marker { border-color: var(--color-error, #ef4444); color: var(--color-error, #ef4444); }
+.timeline-item[data-kind="provider_blocked"] .timeline-marker { border-color: var(--color-error, #ef4444); color: var(--color-error, #ef4444); }
+.timeline-item[data-kind="provider_skipped"] .timeline-marker { border-color: var(--color-warning, #f59e0b); color: var(--color-warning, #f59e0b); }
 
 .timeline-kind {
     font-weight: 600;

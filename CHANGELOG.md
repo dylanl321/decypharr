@@ -16,7 +16,7 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap**, 
 
 #### History timeline per queue entry
 
-- **Model:** `storage.Entry` gains an in-memory `Timeline []TimelineEvent` log with kinds `added`, `queued`, `debrid_submitted`, `debrid_ready`, `local_download_start`, `local_download_done`, `symlinked`, `imported`, `error`, and `removed`. Events carry `provider`, `message`, `bytes`, and `duration` fields.
+- **Model:** `storage.Entry` gains an in-memory `Timeline []TimelineEvent` log with kinds `added`, `queued`, `debrid_submitted`, `debrid_ready`, `provider_blocked`, `provider_skipped`, `local_download_start`, `local_download_done`, `symlinked`, `imported`, `error`, and `removed`. Events carry `provider`, `message`, `bytes`, and `duration` fields.
 - **Persistence:** Timeline entries live in a new `timeline` sidecar bucket on the hybrid store (JSON-encoded, keyed by infohash) so the existing protobuf `Entry` record is unchanged. `queue.{Add,Update,Delete}` and `GetTorrent` transparently round-trip the timeline.
 - **API/UI:** New `GET /api/queue/{hash}/timeline` endpoint plus a vertical timeline drawer in the Queue UI that auto-refreshes, falls back to a synthesized history for older entries, and supports "copy as text".
 
@@ -58,6 +58,21 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap**, 
 - **Root cause:** When `prefer_cached_provider` selected one cached debrid, `SendToDebrid` replaced the eligible client list with that single provider. If that provider returned HTTP 451 (Unavailable For Legal Reasons / DMCA takedown), the submit failed immediately and Sonarr/Radarr saw a `400 BadRequest` even though another configured provider could have served the torrent.
 - **Fallback restored:** The cached provider is now promoted to the front of the eligible list while the remaining providers stay as fallback, so a single-provider 451 (or any provider-specific failure) cleanly falls through to the next debrid.
 - **Typed error:** New `customerror.ContentBlockedError` (HTTP 451, code `content_blocked`, `Permanent`) is returned by RealDebrid's `addTorrent`/`addMagnet` and TorBox's `SubmitMagnet` instead of a generic `unexpected status code`. Submit failures now log a `Submit failed; trying next provider if available` warning so the fallthrough is visible.
+- **Timeline visibility:** Skipped providers are now recorded on the entry's history. `ImportRequest` collects per-provider `SubmitAttempt`s during `SendToDebrid`; on entry creation, each blocked attempt becomes a `provider_blocked` (DMCA/451) or `provider_skipped` event in `Entry.Timeline` *before* the successful `debrid_submitted` event. The Queue history drawer renders these with distinct shield/skip-forward icons (`bi-shield-exclamation` / `bi-skip-forward`) and warning/error coloring.
+
+#### Timeline coverage gaps closed
+
+Previously several lifecycle paths emitted no timeline events, leaving the history drawer blank or misleading for non-trivial flows.
+
+- **NZB ingestion:** Both `addNewNZBViaDebrid` and `addNewNZBViaNNTP` now emit `added` and `debrid_submitted` events. Provider-blocked / skipped attempts collected during `SendToNZBDebrid` are also surfaced on the entry timeline (matching torrent behavior).
+- **NZB submit fallback:** `SendToNZBDebrid` now promotes the cached NZB provider to the front of the eligible list while keeping the others as fallback (mirrors `SendToDebrid` 451 fix), and records `SubmitAttempt`s the same way.
+- **Slot-exhaustion requeue:** When `AddNewTorrent` requeues a request because every eligible debrid is at its `max_active_downloads` cap, the eventually-submitted entry now opens with a `queued` event reading `Waited <duration> for free debrid slot`. `ImportRequest.QueuedAt` is captured the first time `ReQueue` runs.
+- **Transient errors:** The retry path in `Downloader.markAsError` (rate-limit / 429 / `too_many_active_downloads`) now records a `Transient: <reason> (will retry)` `error` event so users can see flap history instead of just a stale `LastError` field.
+- **Provider switch / migration:** `executeMigration` records `debrid_submitted` (target) when the switch starts, `removed` (source) when the source placement is deleted, `debrid_ready` (target) when the new placement settles, and `error` on each failure path.
+- **Repair / re-insert:** `Fixer.MoveTorrent` records `debrid_submitted` for each successful re-insert (with `Re-inserted` / `Re-inserted (forced)` message) plus a `debrid_ready` event when an existing healthy placement is reactivated. When all re-insertion attempts fail, an `error` event captures the attempt count and last error.
+- **Post-debrid action parity:** `TimelineDebridReady` is now emitted at the start of `processAction` (the single shared post-debrid entry-point) instead of only inside the symlink path of `localDownloader`. All actions — `download`, `symlink`, `strm`, `none` — now record a `debrid_ready` transition consistently.
+- **Drawer fallback to main storage:** `GET /api/queue/{hash}/timeline` now falls back to `Manager.GetEntry` + the timeline sidecar when the entry has already moved out of the queue (post-completion / post-switch), so the history drawer continues to work for completed, switched, and re-inserted entries.
+- **Sidecar cleanup:** `Storage.Delete` now also calls `DeleteTimeline` to avoid orphaning timeline events when an entry is purged from the main store.
 
 #### Stuck at 100% without HTTP pull (#1, #3)
 

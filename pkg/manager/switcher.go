@@ -60,12 +60,26 @@ func (m *Manager) executeMigration(job *storage.SwitcherJob, torrent *storage.En
 		Msg("Starting torrent migration")
 	job.Status = storage.SwitcherStatusInProgress
 
+	migrationMsg := fmt.Sprintf("Switching from %s", job.SourceProvider)
+	_ = m.storage.AppendTimelineEvent(torrent.InfoHash, storage.TimelineEvent{
+		At:       time.Now(),
+		Kind:     storage.TimelineDebridSubmitted,
+		Provider: job.TargetProvider,
+		Message:  migrationMsg,
+	})
+
 	// GetReader target debrid client
 	targetClient := m.ProviderClient(job.TargetProvider)
 	if targetClient == nil {
 		job.Status = storage.SwitcherStatusFailed
 		job.Error = fmt.Sprintf("target debrid %s not found", job.TargetProvider)
 		job.CompletedAt = ptrTime(time.Now())
+		_ = m.storage.AppendTimelineEvent(torrent.InfoHash, storage.TimelineEvent{
+			At:       time.Now(),
+			Kind:     storage.TimelineError,
+			Provider: job.TargetProvider,
+			Message:  "Switch failed: " + job.Error,
+		})
 		return
 	}
 	// Submit to target debrid
@@ -82,6 +96,12 @@ func (m *Manager) executeMigration(job *storage.SwitcherJob, torrent *storage.En
 			Err(err).
 			Str("job_id", job.ID).
 			Msg("Failed to move torrent to target debrid")
+		_ = m.storage.AppendTimelineEvent(torrent.InfoHash, storage.TimelineEvent{
+			At:       time.Now(),
+			Kind:     storage.TimelineError,
+			Provider: job.TargetProvider,
+			Message:  "Switch failed: " + job.Error,
+		})
 		return
 	}
 
@@ -102,6 +122,12 @@ func (m *Manager) executeMigration(job *storage.SwitcherJob, torrent *storage.En
 			torrent.RemoveProvider(job.SourceProvider, func(placement *storage.ProviderEntry) error {
 				return m.RemoveFromProvider(torrent, placement)
 			})
+			_ = m.storage.AppendTimelineEvent(torrent.InfoHash, storage.TimelineEvent{
+				At:       time.Now(),
+				Kind:     storage.TimelineRemoved,
+				Provider: job.SourceProvider,
+				Message:  "Removed source placement after switch",
+			})
 		}
 	}
 
@@ -112,9 +138,21 @@ func (m *Manager) executeMigration(job *storage.SwitcherJob, torrent *storage.En
 		job.Status = storage.SwitcherStatusFailed
 		job.Error = fmt.Sprintf("failed to update torrent: %v", err)
 		m.logger.Error().Err(err).Msg("Failed to update torrent after migration")
+		_ = m.storage.AppendTimelineEvent(torrent.InfoHash, storage.TimelineEvent{
+			At:       time.Now(),
+			Kind:     storage.TimelineError,
+			Provider: job.TargetProvider,
+			Message:  "Switch save failed: " + job.Error,
+		})
 	} else {
 		job.Status = storage.SwitcherStatusCompleted
 		job.Progress = 100
+		_ = m.storage.AppendTimelineEvent(torrent.InfoHash, storage.TimelineEvent{
+			At:       time.Now(),
+			Kind:     storage.TimelineDebridReady,
+			Provider: job.TargetProvider,
+			Message:  fmt.Sprintf("Switched from %s", job.SourceProvider),
+		})
 	}
 
 	job.CompletedAt = ptrTime(time.Now())

@@ -49,6 +49,27 @@ type ImportRequest struct {
 
 	Type  ImportType `json:"type"`
 	Async bool       `json:"async"`
+
+	// SubmitAttempts records per-provider submit failures encountered before
+	// the entry was created (e.g. HTTP 451 DMCA blocks that triggered fallback
+	// to another debrid). Surfaced on the entry timeline so the user can see
+	// why a particular provider was skipped.
+	SubmitAttempts []SubmitAttempt `json:"-"`
+
+	// QueuedAt records the first time the request was requeued (e.g. due to
+	// slot exhaustion across all eligible providers). Used to emit a
+	// `queued` timeline event on the entry once it eventually submits.
+	QueuedAt *time.Time `json:"queued_at,omitempty"`
+}
+
+// SubmitAttempt records a single provider's reason for being skipped during
+// the SendToDebrid fallback loop. Only failures are recorded; the eventual
+// successful provider is captured by the standard TimelineDebridSubmitted
+// event on the new entry.
+type SubmitAttempt struct {
+	Provider string
+	Code     string // customerror.Error.Code, e.g. "content_blocked"
+	Message  string
 }
 
 func NewTorrentRequest(debrid string, downloadFolder string, magnet *utils.Magnet, arr *arr.Arr, action config.DownloadAction, downloadUncached *bool, callBackUrl string, importType ImportType, skipMultiSeason bool) *ImportRequest {
@@ -134,6 +155,10 @@ func (q *Queue) ReQueue(importReq *ImportRequest) error {
 	importReq.Status = "queued"
 	importReq.CompletedAt = time.Time{}
 	importReq.Error = ""
+	if importReq.QueuedAt == nil {
+		now := time.Now()
+		importReq.QueuedAt = &now
+	}
 	err := q.PushRequest(importReq)
 	if err != nil {
 		return err

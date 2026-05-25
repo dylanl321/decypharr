@@ -29,8 +29,9 @@ func (s *Server) handleGetQueueItem(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetQueueTimeline returns the lifecycle event log for a queue entry.
-// Falls back to a synthesized timeline if no events have been persisted yet
-// (e.g. the entry predates timeline support) so the UI is never empty.
+// Falls back to the main entry store (post-completion / switched entries) and
+// then to a synthesized timeline if no events have been persisted yet so the
+// UI is never empty.
 func (s *Server) handleGetQueueTimeline(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 	if hash == "" {
@@ -38,10 +39,22 @@ func (s *Server) handleGetQueueTimeline(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	torrent, err := s.manager.Queue().GetTorrent(hash)
+	var (
+		torrent *storage.Entry
+		err     error
+	)
+	torrent, err = s.manager.Queue().GetTorrent(hash)
 	if err != nil || torrent == nil {
-		http.Error(w, "Queue item not found", http.StatusNotFound)
-		return
+		// Entry may have moved to main storage after completion or a provider
+		// switch — try there before giving up.
+		torrent, err = s.manager.GetEntry(hash)
+		if err != nil || torrent == nil {
+			http.Error(w, "Entry not found", http.StatusNotFound)
+			return
+		}
+		if events, _ := s.manager.Storage().GetTimeline(hash); events != nil {
+			torrent.Timeline = events
+		}
 	}
 
 	events := torrent.Timeline

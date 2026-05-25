@@ -199,6 +199,9 @@ func (s *Storage) Delete(infohash string) error {
 	if err == nil && entry != nil {
 		s.removeFromEntryItem(entry)
 	}
+	// Clean up sidecar timeline so we don't orphan history events when the
+	// entry is purged. Best-effort; ignore errors.
+	_ = s.DeleteTimeline(infohash)
 	return s.entries.Delete(infohash)
 }
 

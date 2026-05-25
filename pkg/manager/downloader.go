@@ -192,6 +192,7 @@ func (d *Downloader) markAsError(entry *storage.Entry, err error) {
 		entry.LastError = err.Error()
 		entry.LastErrorTime = &now
 		entry.ErrorCount++
+		entry.AppendEvent(storage.TimelineError, entry.ActiveProvider, "Transient: "+err.Error()+" (will retry)")
 		_ = d.manager.queue.Update(entry)
 		return
 	}
@@ -546,7 +547,6 @@ func (d *Downloader) processTorrentDownload(entry *storage.Entry) error {
 	}
 	entry.Phase = storage.DownloadPhaseDownloading
 	entry.Progress = overallProgress(entry.DebridProgress, entry.LocalProgress, entry.Action)
-	entry.AppendEvent(storage.TimelineDebridReady, entry.ActiveProvider, "")
 	entry.AppendEvent(storage.TimelineLocalDownloadStart, entry.ActiveProvider, fmt.Sprintf("%d files", len(files)))
 
 	var progressMu sync.Mutex

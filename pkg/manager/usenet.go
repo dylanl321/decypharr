@@ -62,6 +62,16 @@ func (m *Manager) addNewNZBViaDebrid(ctx context.Context, req *ImportRequest) (s
 	entry.Phase = storage.DownloadPhaseDebridFetching
 	entry.DebridProgress = usenetDownload.Progress / 100.0
 	entry.Progress = entry.DebridProgress
+	entry.AppendEvent(storage.TimelineAdded, "", "Added via "+req.Arr.Name)
+	if req.QueuedAt != nil {
+		waited := time.Since(*req.QueuedAt).Round(time.Second)
+		entry.AppendEvent(storage.TimelineQueued, "", fmt.Sprintf("Waited %s for free debrid slot", waited))
+	}
+	for _, attempt := range req.SubmitAttempts {
+		kind, msg := submitAttemptEvent(attempt)
+		entry.AppendEvent(kind, attempt.Provider, msg)
+	}
+	entry.AppendEvent(storage.TimelineDebridSubmitted, usenetDownload.Debrid, "")
 
 	if err := m.queue.Add(entry); err != nil {
 		return "", fmt.Errorf("failed to add nzb to queue: %w", err)
@@ -117,6 +127,8 @@ func (m *Manager) addNewNZBViaNNTP(ctx context.Context, req *ImportRequest) (str
 	entry.UpdatedAt = time.Now()
 	entry.State = storage.EntryStateDownloading
 	entry.Status = debridTypes.TorrentStatusDownloading
+	entry.AppendEvent(storage.TimelineAdded, "", "Added via "+req.Arr.Name)
+	entry.AppendEvent(storage.TimelineDebridSubmitted, "usenet", "Submitted to NNTP")
 	if err := m.queue.Add(entry); err != nil {
 		return "", fmt.Errorf("failed to add nzb to queue: %w", err)
 	}

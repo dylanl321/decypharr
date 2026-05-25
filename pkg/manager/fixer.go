@@ -173,6 +173,11 @@ func (f *Fixer) FixTorrent(ctx context.Context, entry *storage.Entry, skipCurren
 	// Mark entry as bad
 	entry.Bad = true
 	entry.UpdatedAt = time.Now()
+	_ = f.manager.storage.AppendTimelineEvent(entry.InfoHash, storage.TimelineEvent{
+		At:      time.Now(),
+		Kind:    storage.TimelineError,
+		Message: fmt.Sprintf("All re-insertion attempts failed (%d): %v", totalAttempts, lastErr),
+	})
 	_ = f.manager.AddOrUpdate(entry, func(t *storage.Entry) {
 		f.manager.RefreshEntries(true)
 	})
@@ -214,6 +219,12 @@ func (f *Fixer) MoveTorrent(entry *storage.Entry, debridName string, reinsert bo
 			if err := entry.ActivatePlacement(debridName); err == nil {
 				entry.Bad = false
 				entry.UpdatedAt = time.Now()
+				_ = f.manager.storage.AppendTimelineEvent(entry.InfoHash, storage.TimelineEvent{
+					At:       time.Now(),
+					Kind:     storage.TimelineDebridReady,
+					Provider: debridName,
+					Message:  "Reactivated existing placement",
+				})
 				return true, nil
 			}
 			// Activation failed — fall through to a fresh submit.
@@ -319,6 +330,17 @@ func (f *Fixer) MoveTorrent(entry *storage.Entry, debridName string, reinsert bo
 
 	entry.Bad = false
 	entry.UpdatedAt = time.Now()
+
+	reinsertMsg := "Re-inserted on " + debridName
+	if reinsert {
+		reinsertMsg = "Re-inserted (forced) on " + debridName
+	}
+	_ = f.manager.storage.AppendTimelineEvent(entry.InfoHash, storage.TimelineEvent{
+		At:       time.Now(),
+		Kind:     storage.TimelineDebridSubmitted,
+		Provider: debridName,
+		Message:  reinsertMsg,
+	})
 
 	// Delete old entry from debrid if different ID
 	if oldID != "" && oldID != newDebridTorrent.Id {

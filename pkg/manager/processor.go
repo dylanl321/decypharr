@@ -70,6 +70,14 @@ func (m *Manager) AddNewTorrent(ctx context.Context, importReq *ImportRequest) e
 	}
 	torrent.ContentPath = torrent.DownloadPath()
 	torrent.AppendEvent(storage.TimelineAdded, "", "Added via "+importReq.Arr.Name)
+	if importReq.QueuedAt != nil {
+		waited := time.Since(*importReq.QueuedAt).Round(time.Second)
+		torrent.AppendEvent(storage.TimelineQueued, "", fmt.Sprintf("Waited %s for free debrid slot", waited))
+	}
+	for _, attempt := range importReq.SubmitAttempts {
+		kind, msg := submitAttemptEvent(attempt)
+		torrent.AppendEvent(kind, attempt.Provider, msg)
+	}
 	torrent.AppendEvent(storage.TimelineDebridSubmitted, debridTorrent.Debrid, "")
 
 	// Add to queue
@@ -268,6 +276,7 @@ func (m *Manager) processAction(entry *storage.Entry) {
 	entry.Status = debridTypes.TorrentStatusDownloaded
 	entry.Phase = storage.DownloadPhaseDownloading
 	entry.UpdatedAt = time.Now()
+	entry.AppendEvent(storage.TimelineDebridReady, entry.ActiveProvider, "")
 	_ = m.queue.Update(entry)
 	m.logger.Info().
 		Str("name", entry.Name).
@@ -401,6 +410,12 @@ func (m *Manager) SendToDebrid(ctx context.Context, importRequest *ImportRequest
 					Str("provider", db.Config().Name).
 					Str("hash", debridTorrent.InfoHash).
 					Msg("Submit failed; trying next provider if available")
+				attempt := SubmitAttempt{Provider: db.Config().Name, Message: err.Error()}
+				var customErr *customerror.Error
+				if errors.As(err, &customErr) {
+					attempt.Code = customErr.Code
+				}
+				importRequest.SubmitAttempts = append(importRequest.SubmitAttempts, attempt)
 			}
 			errs = append(errs, err)
 			continue
@@ -430,6 +445,24 @@ func (m *Manager) SendToDebrid(ctx context.Context, importRequest *ImportRequest
 	}
 	joinedErrors := errors.Join(errs...)
 	return nil, fmt.Errorf("failed to process torrent: %w", joinedErrors)
+}
+
+// submitAttemptEvent maps a recorded SubmitAttempt to a timeline kind and
+// human-readable message. Provider-blocked submissions (HTTP 451 / DMCA) get a
+// dedicated kind so the UI can render them distinctly from generic errors.
+func submitAttemptEvent(a SubmitAttempt) (storage.TimelineEventKind, string) {
+	switch a.Code {
+	case "content_blocked":
+		return storage.TimelineProviderBlocked, "Blocked by provider (DMCA / 451) — falling back"
+	default:
+		msg := a.Message
+		if msg == "" {
+			msg = "Submit failed — falling back"
+		} else {
+			msg = "Submit failed — falling back: " + msg
+		}
+		return storage.TimelineProviderSkipped, msg
+	}
 }
 
 func (m *Manager) processNewNZBDebrid(entry *storage.Entry, usenetDownload *debridTypes.UsenetDownload) {
@@ -548,7 +581,17 @@ func (m *Manager) SendToNZBDebrid(ctx context.Context, importRequest *ImportRequ
 
 	if config.Get().PreferCached() {
 		if cached, ok := m.selectCachedNZBProvider(ctx, hash, importRequest.SelectedDebrid); ok {
-			clients = []namedNZBClient{cached}
+			// Promote the cached provider to be tried first while keeping
+			// remaining providers as fallback (mirrors SendToDebrid behaviour
+			// for symmetric provider-specific failure handling).
+			reordered := make([]namedNZBClient, 0, len(clients))
+			reordered = append(reordered, cached)
+			for _, c := range clients {
+				if c.name != cached.name {
+					reordered = append(reordered, c)
+				}
+			}
+			clients = reordered
 		}
 	}
 
@@ -570,6 +613,12 @@ func (m *Manager) SendToNZBDebrid(ctx context.Context, importRequest *ImportRequ
 		if err != nil || submitted == nil || submitted.Id == "" {
 			if err != nil {
 				errs = append(errs, err)
+				attempt := SubmitAttempt{Provider: item.name, Message: err.Error()}
+				var customErr *customerror.Error
+				if errors.As(err, &customErr) {
+					attempt.Code = customErr.Code
+				}
+				importRequest.SubmitAttempts = append(importRequest.SubmitAttempts, attempt)
 			} else {
 				errs = append(errs, fmt.Errorf("failed to submit nzb to %s", item.name))
 			}
