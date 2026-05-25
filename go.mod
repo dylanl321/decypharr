@@ -1,6 +1,6 @@
 module github.com/sirrobot01/decypharr
 
-go 1.25.5
+go 1.25.3
 
 require (
 	github.com/Tensai75/nzbparser v0.1.0
