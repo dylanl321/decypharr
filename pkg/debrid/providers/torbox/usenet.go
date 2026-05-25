@@ -51,11 +51,11 @@ func (tb *Torbox) SubmitNZB(ctx context.Context, dl *types.UsenetDownload) (*typ
 	if resp != nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
 		return nil, fmt.Errorf("torbox usenet API error: Status: %d", resp.StatusCode)
 	}
-	if data.Data == nil || data.Data.UsenetDownloadID == "" {
+	if data.Data == nil || data.Data.UsenetDownloadID == 0 {
 		return nil, fmt.Errorf("error adding usenet download")
 	}
 
-	dl.Id = data.Data.UsenetDownloadID
+	dl.Id = strconv.Itoa(data.Data.UsenetDownloadID)
 	if data.Data.Hash != "" {
 		dl.Hash = strings.ToUpper(data.Data.Hash)
 	} else if dl.Hash == "" && len(dl.NZBContent) > 0 {

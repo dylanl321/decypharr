@@ -1,6 +1,8 @@
 package torbox
 
-import "time"
+import (
+	"time"
+)
 
 type APIResponse[T any] struct {
 	Success bool   `json:"success"`
@@ -105,11 +107,13 @@ type profileResponse struct {
 
 type ProfileResponse APIResponse[profileResponse]
 
-type AddUsenetResponse APIResponse[struct {
-	UsenetDownloadID string `json:"usenetdownload_id"`
+type addUsenetData struct {
+	UsenetDownloadID int    `json:"usenetdownload_id"`
 	Hash             string `json:"hash"`
 	AuthId           string `json:"auth_id"`
-}]
+}
+
+type AddUsenetResponse APIResponse[addUsenetData]
 
 type torboxUsenetInfo struct {
 	Id               int         `json:"id"`
