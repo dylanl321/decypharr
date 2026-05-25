@@ -1,16 +1,6 @@
 {{ define "config" }}
 <div class="space-y-6">
-    {{ if .SetupError }}
-    <div role="alert" class="alert alert-warning">
-        <i class="bi bi-exclamation-triangle text-xl"></i>
-        <div>
-            <h3 class="font-bold">Configuration Required</h3>
-            <div class="text-sm">Your configuration is incomplete ({{ .SetupError }}). Please complete the setup
-                below.
-            </div>
-        </div>
-    </div>
-    {{ end }}
+    {{ template "partials/setup_alert" (dict "SetupError" .SetupError "URLBase" .URLBase "SetupAlertMessage" "Your configuration is incomplete. Complete the fields below." "SetupAlertHideLink" true) }}
 
     <form id="configForm" class="space-y-6">
         <div class="card bg-base-100 shadow-xl">
@@ -31,8 +21,14 @@
                         </button>
                         <button type="button"
                                 class="tab-button flex items-center gap-2 py-3 px-1 border-b-2 border-transparent text-base-content/70 hover:text-base-content hover:border-base-300 font-medium text-sm transition-colors"
+                                data-tab="reliability">
+                            <i class="bi bi-shield-check text-lg"></i>
+                            <span class="hidden sm:inline">Reliability</span>
+                        </button>
+                        <button type="button"
+                                class="tab-button flex items-center gap-2 py-3 px-1 border-b-2 border-transparent text-base-content/70 hover:text-base-content hover:border-base-300 font-medium text-sm transition-colors"
                                 data-tab="auth">
-                            <i class="bi bi-download text-lg"></i>
+                            <i class="bi bi-shield-lock text-lg"></i>
                             <span class="hidden sm:inline">Auth</span>
                         </button>
                         <button type="button"
@@ -344,6 +340,8 @@
                     </div>
                 </div>
 
+                {{ template "partials/config_reliability" }}
+
                 <div class="tab-content hidden" data-tab-content="providers">
                     <div class="space-y-6">
                         <h2 class="text-2xl font-bold flex items-center">
@@ -637,6 +635,17 @@
                                     <p class="text-sm opacity-70 mb-4">Select which events should trigger notifications.
                                         If none are selected, all events are enabled.</p>
                                     <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                                        <div>
+                                            <label class="label cursor-pointer justify-start gap-2">
+                                                <input type="checkbox" class="checkbox checkbox-primary checkbox-sm"
+                                                       name="notifications.events[]" value="debrid_ready">
+                                                <div>
+                                                    <span class="font-medium text-sm">Debrid Ready</span>
+                                                    <div class="label-text-alt">When debrid finishes and local pull is about to start</div>
+                                                </div>
+                                            </label>
+                                        </div>
+
                                         <div>
                                             <label class="label cursor-pointer justify-start gap-2">
                                                 <input type="checkbox" class="checkbox checkbox-primary checkbox-sm"

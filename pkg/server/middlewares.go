@@ -80,6 +80,7 @@ func (s *Server) setupRedirectMiddleware(next http.Handler) http.Handler {
 		if strings.HasPrefix(r.URL.Path, "/setup") ||
 			strings.HasPrefix(r.URL.Path, "/api/setup") ||
 			strings.HasPrefix(r.URL.Path, "/api/login") ||
+			strings.HasPrefix(r.URL.Path, "/logout") ||
 			strings.HasPrefix(r.URL.Path, "/api/logout") ||
 			strings.HasPrefix(r.URL.Path, "/api/config") ||
 			strings.HasPrefix(r.URL.Path, "/assets") ||

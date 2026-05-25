@@ -1,17 +1,6 @@
 {{ define "index" }}
 <div class="space-y-6">
-
-    {{ if .SetupError }}
-    <div role="alert" class="alert alert-warning">
-        <i class="bi bi-exclamation-triangle text-xl"></i>
-        <div>
-            <h3 class="font-bold">Configuration Required</h3>
-            <div class="text-sm">Your configuration is incomplete ({{ .SetupError }}). Please complete the setup in the
-                <a href="{{.URLBase}}settings" class="link link-hover font-semibold">Settings page</a>.
-            </div>
-        </div>
-    </div>
-    {{ end }}
+    {{ template "partials/setup_alert" . }}
 
     <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
@@ -40,8 +29,9 @@
                     <div>
                         <select class="select select-sm" id="stateFilter">
                             <option value="">All States</option>
-                            <option value="pausedUP">Completed</option>
+                            <option value="queued">Queued</option>
                             <option value="downloading">Downloading</option>
+                            <option value="pausedUP">Completed</option>
                             <option value="error">Error</option>
                         </select>
                     </div>
@@ -83,6 +73,9 @@
                         </th>
                         <th class="font-semibold">
                             <i class="bi bi-hdd mr-2"></i>Size
+                        </th>
+                        <th class="font-semibold">
+                            <i class="bi bi-layers mr-2"></i>Phase
                         </th>
                         <th class="font-semibold">
                             <i class="bi bi-speedometer2 mr-2"></i>Progress

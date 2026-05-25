@@ -16,7 +16,6 @@
     <link rel="preload" href="{{.URLBase}}assets/js/common.js" as="script">
 
     <script>
-        // Early theme detection to prevent FOUC
         (function () {
             const savedTheme = localStorage.getItem('theme');
             if (savedTheme) {
@@ -27,8 +26,6 @@
                 document.documentElement.setAttribute('data-theme', 'light');
             }
         })();
-
-        // Set global URL base
         window.urlBase = "{{.URLBase}}";
     </script>
 </head>
@@ -38,6 +35,7 @@
 
 <header class="navbar bg-base-100 shadow-lg sticky top-0 z-40 backdrop-blur-sm">
     <div class="navbar-start">
+        {{ if .ShowNav }}
         <div class="dropdown">
             <div tabindex="0" role="button" class="btn btn-ghost lg:hidden">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -45,65 +43,25 @@
                 </svg>
             </div>
             <ul class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow-lg bg-base-100 rounded-box w-52 border border-base-300">
-                <li><a href="{{.URLBase}}" class="{{if eq .Page " index"}}menu-active{{end}}">
-                    <i class="bi bi-grid-3x3-gap text-primary"></i>Dashboard
-                    </a></li>
-                <li><a href="{{.URLBase}}download" class="{{if eq .Page " download"}}menu-active{{end}}">
-                    <i class="bi bi-cloud-download text-secondary"></i>Download
-                    </a></li>
-                <li><a href="{{.URLBase}}browse" class="{{if eq .Page " browse"}}menu-active{{end}}">
-                    <i class="bi bi-folder2-open text-primary"></i>Browse
-                    </a></li>
-                <li><a href="{{.URLBase}}repair" class="{{if eq .Page " repair"}}menu-active{{end}}">
-                    <i class="bi bi-wrench-adjustable text-accent"></i>Repair
-                    </a></li>
-                <li><a href="{{.URLBase}}settings" class="{{if eq .Page " config"}}menu-active{{end}}">
-                    <i class="bi bi-gear text-info"></i>Settings
-                    </a></li>
-                <li><a href="{{.URLBase}}logs" target="_blank">
-                    <i class="bi bi-journal-text text-warning"></i>Logs
-                </a></li>
+                {{ template "partials/nav_items" dict "Items" .NavItems "ActivePage" .Page "Compact" true }}
+                {{ template "partials/nav_items" dict "Items" .UtilityNav "ActivePage" .Page "Compact" true }}
             </ul>
         </div>
+        {{ end }}
         <a class="btn btn-ghost text-xl font-bold text-primary group" href="{{.URLBase}}">
             <img src="{{.URLBase}}images/logo.png" alt="Decypharr Logo" class="w-8 h-8 inline-block mr-2">
             <span class="hidden sm:inline bg-clip-text">Decypharr</span>
         </a>
     </div>
 
+    {{ if .ShowNav }}
     <div class="navbar-center hidden lg:flex">
         <ul class="menu menu-horizontal px-1 gap-1">
-            <li><a href="{{.URLBase}}" class="{{if eq .Page " index"}}menu-active{{end}} tooltip tooltip-bottom"
-                data-tip="Dashboard">
-                <i class="bi bi-grid-3x3-gap"></i>
-                <span class="hidden xl:inline">Dashboard</span>
-                </a></li>
-            <li><a href="{{.URLBase}}download" class="{{if eq .Page " download"}}menu-active{{end}} tooltip
-                tooltip-bottom" data-tip="Add Downloads">
-                <i class="bi bi-cloud-download"></i>
-                <span class="hidden xl:inline">Download</span>
-                </a></li>
-            <li><a href="{{.URLBase}}browse" class="{{if eq .Page " browse"}}menu-active{{end}} tooltip tooltip-bottom"
-                data-tip="Browse Torrents">
-                <i class="bi bi-folder2-open"></i>
-                <span class="hidden xl:inline">Browse</span>
-                </a></li>
-            <li><a href="{{.URLBase}}repair" class="{{if eq .Page " repair"}}menu-active{{end}} tooltip tooltip-bottom"
-                data-tip="Repair Media">
-                <i class="bi bi-wrench-adjustable"></i>
-                <span class="hidden xl:inline">Repair</span>
-                </a></li>
-            <li><a href="{{.URLBase}}settings" class="{{if eq .Page " config"}}menu-active{{end}} tooltip
-                tooltip-bottom" data-tip="Settings">
-                <i class="bi bi-gear"></i>
-                <span class="hidden xl:inline">Settings</span>
-                </a></li>
-            <li><a href="{{.URLBase}}debug/logs" target="_blank" class="tooltip tooltip-bottom" data-tip="System Logs">
-                <i class="bi bi-journal-text"></i>
-                <span class="hidden xl:inline">Logs</span>
-            </a></li>
+            {{ template "partials/nav_items" dict "Items" .NavItems "ActivePage" .Page "IconOnly" false }}
+            {{ template "partials/nav_items" dict "Items" .UtilityNav "ActivePage" .Page "IconOnly" false }}
         </ul>
     </div>
+    {{ end }}
 
     <div class="navbar-end">
         <div class="flex items-center gap-3">
@@ -115,12 +73,17 @@
                 </label>
             </div>
 
-            <div class="tooltip tooltip-left" data-tip="System Statistics">
-                <a href="{{.URLBase}}stats" class="btn btn-ghost btn-sm hover:bg-base-300 transition-colors">
-                    <i class="bi bi-graph-up text-lg"></i>
-                    <span class="hidden md:inline ml-1">Stats</span>
-                </a>
+            {{ if .ShowLogout }}
+            <div class="dropdown dropdown-end">
+                <div tabindex="0" role="button" class="btn btn-ghost btn-sm gap-1">
+                    <i class="bi bi-person-circle text-lg"></i>
+                    <span class="hidden md:inline max-w-24 truncate">{{.Username}}</span>
+                </div>
+                <ul tabindex="0" class="dropdown-content menu menu-sm z-[1] mt-2 p-2 shadow-lg bg-base-100 rounded-box w-40 border border-base-300">
+                    <li><a href="{{.URLBase}}logout"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+                </ul>
             </div>
+            {{ end }}
 
             <div class="tooltip tooltip-left" data-tip="Current Version">
                 <div class="badge badge-primary font-mono text-xs hover:badge-primary-focus transition-colors cursor-pointer"
@@ -143,6 +106,8 @@
     {{ template "repair" . }}
     {{ else if eq .Page "stats" }}
     {{ template "stats" . }}
+    {{ else if eq .Page "health" }}
+    {{ template "health" . }}
     {{ else if eq .Page "config" }}
     {{ template "config" . }}
     {{ else if eq .Page "login" }}
@@ -197,6 +162,10 @@
 <script src="{{.URLBase}}assets/js/repair.js"></script>
 {{ else if eq .Page "config" }}
 <script src="{{.URLBase}}assets/js/config.js"></script>
+{{ else if eq .Page "stats" }}
+<script src="{{.URLBase}}assets/js/stats.js"></script>
+{{ else if eq .Page "health" }}
+<script src="{{.URLBase}}assets/js/health.js"></script>
 {{ else if eq .Page "setup" }}
 <script src="{{.URLBase}}assets/js/setup.js"></script>
 {{ end }}

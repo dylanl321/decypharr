@@ -1,0 +1,87 @@
+{{ define "partials/config_reliability" }}
+<div class="tab-content hidden" data-tab-content="reliability">
+    <div class="space-y-6">
+        <h2 class="text-2xl font-bold flex items-center mb-6">
+            <i class="bi bi-shield-check mr-3 text-primary"></i>Reliability &amp; Queue
+        </h2>
+
+        <div class="card bg-base-200/50">
+            <div class="card-body gap-4">
+                <label class="label cursor-pointer justify-start gap-3">
+                    <input type="checkbox" class="checkbox checkbox-primary" name="prefer_cached_provider"
+                           id="prefer_cached_provider" checked>
+                    <div>
+                        <span class="font-medium">Prefer cached provider</span>
+                        <p class="text-sm opacity-70">Check all debrids for cache before submit; use first cached provider in config order</p>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <div class="divider">Category paths</div>
+        <p class="text-sm opacity-70">Override download folder per Arr category (case-insensitive). Leave empty to use default folder layout.</p>
+        <div id="categoryPathsContainer" class="space-y-2"></div>
+        <button type="button" class="btn btn-outline btn-sm" id="addCategoryPathBtn">
+            <i class="bi bi-plus-lg"></i> Add category path
+        </button>
+
+        <div class="divider">Stale &amp; failover</div>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div>
+                <label class="label" for="stale_download_hours">
+                    <span class="font-medium">Stale download hours</span>
+                </label>
+                <input type="number" class="input w-full" name="stale_download_hours" id="stale_download_hours"
+                       min="0" placeholder="0 = disabled">
+                <span class="text-sm opacity-70">Mark 0% progress downloads as failed after N hours</span>
+            </div>
+            <div>
+                <label class="label" for="stuck_complete_minutes">
+                    <span class="font-medium">Stuck complete minutes</span>
+                </label>
+                <input type="number" class="input w-full" name="stuck_complete_minutes" id="stuck_complete_minutes"
+                       min="0" placeholder="30 default">
+                <span class="text-sm opacity-70">Retry entries stuck at debrid-complete without local finish</span>
+            </div>
+            <div>
+                <label class="label" for="failover_timeout_hours">
+                    <span class="font-medium">Failover timeout hours</span>
+                </label>
+                <input type="number" class="input w-full" name="failover_timeout_hours" id="failover_timeout_hours"
+                       min="0" placeholder="0 = disabled">
+                <span class="text-sm opacity-70">Switch provider when debrid progress stalls</span>
+            </div>
+        </div>
+
+        <div class="divider">Advanced download options</div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+                <label class="label" for="retries">
+                    <span class="font-medium">Retries</span>
+                </label>
+                <input type="number" class="input w-full" name="retries" id="retries" min="0">
+            </div>
+            <div>
+                <label class="label" for="categories">
+                    <span class="font-medium">Categories</span>
+                </label>
+                <input type="text" class="input w-full" name="categories" id="categories"
+                       placeholder="sonarr, radarr">
+                <span class="text-sm opacity-70">Comma-separated qBittorrent categories</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <input type="checkbox" class="checkbox checkbox-primary" name="skip_auto_move" id="skip_auto_move">
+                <label class="label cursor-pointer" for="skip_auto_move">Skip auto move</label>
+            </div>
+            <div class="flex items-center gap-3">
+                <input type="checkbox" class="checkbox checkbox-primary" name="allow_samples" id="allow_samples">
+                <label class="label cursor-pointer" for="allow_samples">Allow samples</label>
+            </div>
+            <div class="flex items-center gap-3">
+                <input type="checkbox" class="checkbox checkbox-primary" name="skip_multi_season" id="skip_multi_season">
+                <label class="label cursor-pointer" for="skip_multi_season">Skip multi-season packs</label>
+            </div>
+        </div>
+    </div>
+</div>
+{{ end }}

@@ -78,6 +78,17 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap** i
 
 - **`GET /api/debrid/rate-limits`** (auth required): Returns configured `main`, `repair`, and `download` rate limit strings per debrid from config.
 
+#### Web UI overhaul
+
+- **Navigation:** Shared nav partial (`templates/partials/nav.html`) driven by `ui_layout.go`; **Health** and **Stats** in primary nav (including mobile); **Logs** consistently links to `/debug/logs`; **logout** at `/logout` with session user menu.
+- **System Health page (`/health`):** Polls `GET /api/health` every 60s; shows debrid, *arr, disk, and stuck-queue checks with links to the dashboard for stuck hashes.
+- **Dashboard:** Phase column; split debrid/local progress bars when applicable; **Queued** state filter (`phase=queued` in API); `?search=` URL pre-fill.
+- **Settings — Reliability tab:** UI for `prefer_cached_provider`, `category_paths`, `stale_download_hours`, `stuck_complete_minutes`, `failover_timeout_hours`, `retries`, `categories`, `skip_auto_move`, `allow_samples`, `skip_multi_season`; save confirmation before restart.
+- **Notifications:** `debrid_ready` event checkbox in Settings.
+- **Download:** Arr category dropdown from `GET /api/arrs`; category path hint from config; fixed duplicate default on post-download action.
+- **Stats:** Inline script extracted to `stats.js`; **Ingests** tab loads `GET /debug/ingests`.
+- **Templates:** `partials/setup_alert.html`, `partials/config_reliability.html`; template `dict` helper; auth pages hide main nav.
+
 ### Changed
 
 - **`processNewTorrent`:** Uses `backfillEntryFromDebrid` and synchronous `processAction` when already cached at submit time.
@@ -115,6 +126,10 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap** i
 | `pkg/server/qbit/types.go` | Phase and progress in qBit JSON |
 | `pkg/server/qbit/http.go` | Category paths in category API |
 | `cmd/healthcheck/main.go` | `/api/health` integration |
+| `pkg/server/ui.go`, `ui_layout.go`, `template_funcs.go` | Layout data, nav items, logout |
+| `pkg/server/templates/layout.html`, `health.html`, `stats.html`, `config.html` | Nav shell, health page, stats/ingests, reliability tab |
+| `pkg/server/assets/js/dashboard.js`, `config.js`, `download.js`, `health.js`, `stats.js` | Queue UX, reliability settings, download arrs, health/stats pages |
+| `pkg/server/api.go` | Queued filter via `phase` |
 
 ### Configuration reference
 
@@ -151,6 +166,9 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap** i
 |--------|------|------|-------------|
 | `GET` | `/api/health` | No | Service health: debrids, arrs, disk, stuck queue |
 | `GET` | `/api/debrid/rate-limits` | Yes | Configured rate limits per debrid |
+| `GET` | `/health` | Yes | System health dashboard (HTML) |
+| `GET` | `/logout` | Yes | End session and redirect to login |
+| `GET` | `/debug/ingests` | Yes | Active debrid ingests (Stats UI) |
 
 ### Testing recommendations
 
@@ -159,6 +177,8 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap** i
 3. Force a pull failure (bad path / permissions) — confirm entry becomes `error`, not stuck at `downloading` with `IsDownloading=true`.
 4. Redeploy with a queue entry at `status=downloaded` — confirm startup resumes the local pull.
 5. `curl http://localhost:8282/api/health` — confirm checks return within ~15s even when an Arr is down.
+6. Open `/health` in the web UI — confirm status badges match the API and stuck items link to the dashboard.
+7. Settings → Reliability — save `category_paths` and confirm Download shows the path hint for the selected Arr.
 
 ### Notes
 

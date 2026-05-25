@@ -264,8 +264,14 @@ func (s *Server) handleGetTorrents(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// State filter
-		if state != "" && t.State != storage.TorrentState(state) {
-			continue
+		if state != "" {
+			if state == "queued" {
+				if t.Phase != storage.DownloadPhaseQueued {
+					continue
+				}
+			} else if t.State != storage.TorrentState(state) {
+				continue
+			}
 		}
 
 		filteredTorrents = append(filteredTorrents, t)

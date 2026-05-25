@@ -41,7 +41,9 @@ func (s *Server) WebRoutes() http.Handler {
 		r.Get("/download", s.DownloadHandler)
 		r.Get("/repair", s.RepairHandler)
 		r.Get("/stats", s.StatsHandler)
+		r.Get("/health", s.HealthHandler)
 		r.Get("/settings", s.ConfigHandler)
+		r.Get("/logout", s.LogoutHandler)
 
 		// API routes
 		r.Route("/api", func(r chi.Router) {

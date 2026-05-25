@@ -38,9 +38,19 @@ class TorrentDashboard {
     }
 
     init() {
+        this.applyURLSearch();
         this.bindEvents();
         this.loadTorrents();
         this.startAutoRefresh();
+    }
+
+    applyURLSearch() {
+        const params = new URLSearchParams(window.location.search);
+        const search = params.get('search');
+        if (search && this.refs.searchInput) {
+            this.refs.searchInput.value = search;
+            this.state.searchQuery = search;
+        }
     }
 
     bindEvents() {
@@ -295,7 +305,10 @@ class TorrentDashboard {
                         <span class="badge badge-ghost">${this.formatSize(torrent.size)}</span>
                     </td>
                     <td>
-                        ${this.renderProgressBar(torrent.progress)}
+                        ${this.renderPhaseBadge(torrent.phase)}
+                    </td>
+                    <td>
+                        ${this.renderProgressCell(torrent)}
                     </td>
                     <td>
                         <span class="text-sm">${this.formatSpeed(torrent.speed ?? torrent.dlspeed)}</span>
@@ -332,8 +345,47 @@ class TorrentDashboard {
         }).join('');
     }
 
+    renderPhaseBadge(phase) {
+        if (!phase) return '<span class="text-xs opacity-50">—</span>';
+        const labels = {
+            queued: 'Queued',
+            debrid_fetching: 'Debrid',
+            downloading: 'Pulling',
+            importing: 'Import',
+            complete: 'Done',
+        };
+        const text = labels[phase] || phase;
+        return `<span class="badge badge-outline badge-xs" title="${this.escapeAttr(phase)}">${text}</span>`;
+    }
+
+    renderProgressCell(torrent) {
+        const hasSplit = (torrent.debrid_progress > 0 || torrent.local_progress > 0) &&
+            (torrent.debrid_progress < 1 || torrent.local_progress < 1);
+        if (hasSplit) {
+            const debridPct = Math.round((torrent.debrid_progress || 0) * 100);
+            const localPct = Math.round((torrent.local_progress || 0) * 100);
+            const overall = Math.round((torrent.progress || 0) * 100);
+            return `
+                <div class="tooltip tooltip-top" data-tip="Debrid ${debridPct}% · Local ${localPct}% · Overall ${overall}%">
+                    <div class="flex flex-col gap-0.5 w-24">
+                        <div class="flex items-center gap-1">
+                            <span class="text-[10px] w-8 opacity-60">D</span>
+                            <progress class="progress progress-info h-1.5 flex-1" value="${debridPct}" max="100"></progress>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="text-[10px] w-8 opacity-60">L</span>
+                            <progress class="progress progress-secondary h-1.5 flex-1" value="${localPct}" max="100"></progress>
+                        </div>
+                        <span class="text-xs font-medium text-center">${overall}%</span>
+                    </div>
+                </div>
+            `;
+        }
+        return this.renderProgressBar(torrent.progress);
+    }
+
     renderProgressBar(progress) {
-        const percent = Math.round(progress * 100);
+        const percent = Math.round((progress || 0) * 100);
         let color = 'progress-info';
         if (percent === 100) color = 'progress-success';
         else if (percent < 25) color = 'progress-error';

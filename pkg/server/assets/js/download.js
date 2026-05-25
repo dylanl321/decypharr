@@ -27,6 +27,46 @@ class DownloadManager {
         this.loadSavedOptions();
         this.bindEvents();
         this.handleMagnetFromURL();
+        this.loadArrCategories();
+    }
+
+    async loadArrCategories() {
+        try {
+            const [arrRes, configRes] = await Promise.all([
+                window.decypharrUtils.fetcher('/api/arrs'),
+                window.decypharrUtils.fetcher('/api/config'),
+            ]);
+            const saved = localStorage.getItem('downloadCategory') || '';
+            if (arrRes.ok) {
+                const arrs = await arrRes.json();
+                const names = (arrs || []).map((a) => a.name).filter(Boolean);
+                this.refs.arr.innerHTML = '<option value="">— None —</option>' +
+                    names.map((n) => `<option value="${window.decypharrUtils.escapeHtml(n)}">${window.decypharrUtils.escapeHtml(n)}</option>`).join('');
+                if (saved) this.refs.arr.value = saved;
+            }
+            if (configRes.ok) {
+                const config = await configRes.json();
+                this.categoryPaths = config.category_paths || {};
+                this.updateCategoryPathHint();
+                this.refs.arr.addEventListener('change', () => this.updateCategoryPathHint());
+            }
+        } catch (e) {
+            console.warn('Could not load Arr list:', e);
+        }
+    }
+
+    updateCategoryPathHint() {
+        const hint = document.getElementById('categoryPathHint');
+        if (!hint) return;
+        const cat = this.refs.arr.value;
+        const path = this.categoryPaths?.[cat] || this.categoryPaths?.[cat?.toLowerCase()];
+        if (path) {
+            hint.textContent = `Category path: ${path}`;
+            hint.classList.remove('opacity-70');
+        } else {
+            hint.textContent = 'Optional: category for path mapping and *Arr integration';
+            hint.classList.add('opacity-70');
+        }
     }
 
     bindEvents() {

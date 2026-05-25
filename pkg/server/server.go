@@ -78,19 +78,13 @@ func New(mgr *manager.Manager) *Server {
 
 	cfg := config.Get()
 
-	templates := template.Must(template.ParseFS(
+	funcMap := template.FuncMap{
+		"dict": templateDict,
+	}
+	templates := template.Must(template.New("").Funcs(funcMap).ParseFS(
 		content,
-		"templates/layout.html",
-		"templates/setup_layout.html",
-		"templates/index.html",
-		"templates/download.html",
-		"templates/repair.html",
-		"templates/stats.html",
-		"templates/config.html",
-		"templates/browse.html",
-		"templates/login.html",
-		"templates/register.html",
-		"templates/setup.html",
+		"templates/*.html",
+		"templates/partials/*.html",
 	))
 	cookieStore := sessions.NewCookieStore([]byte(cfg.SecretKey()))
 	cookieStore.Options = &sessions.Options{

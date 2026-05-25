@@ -48,6 +48,10 @@ class ConfigManager {
         this.refs.addArrBtn.addEventListener('click', () => this.addArrConfig());
         this.refs.addVirtualFolderBtn.addEventListener('click', () => this.addVirtualFolder());
         this.refs.addUsenetProviderBtn.addEventListener('click', () => this.addUsenetProvider());
+        const addCatBtn = document.getElementById('addCategoryPathBtn');
+        if (addCatBtn) {
+            addCatBtn.addEventListener('click', () => this.addCategoryPathRow());
+        }
     }
 
     async loadConfiguration() {
@@ -69,6 +73,7 @@ class ConfigManager {
     populateForm(config) {
         // Load general settings
         this.populateGeneralSettings(config);
+        this.populateReliabilitySettings(config);
 
         // Load debrid configs
         if (config.debrids && Array.isArray(config.debrids)) {
@@ -1046,6 +1051,10 @@ class ConfigManager {
     async saveConfiguration(e) {
         e.preventDefault();
 
+        if (!confirm('Save configuration? The application will restart and active downloads may be briefly interrupted.')) {
+            return;
+        }
+
         // Show loading overlay
         this.refs.loadingOverlay.classList.remove('hidden');
 
@@ -1171,8 +1180,81 @@ class ConfigManager {
             notifications: this.collectNotificationsConfig(),
 
             // Collect repair config
-            repair: this.collectRepairConfig()
+            repair: this.collectRepairConfig(),
+
+            // Reliability
+            prefer_cached_provider: document.getElementById('prefer_cached_provider')?.checked ?? true,
+            category_paths: this.collectCategoryPaths(),
+            stale_download_hours: parseInt(document.getElementById('stale_download_hours')?.value, 10) || 0,
+            stuck_complete_minutes: parseInt(document.getElementById('stuck_complete_minutes')?.value, 10) || 0,
+            failover_timeout_hours: parseInt(document.getElementById('failover_timeout_hours')?.value, 10) || 0,
+            retries: parseInt(document.querySelector('[name="retries"]')?.value, 10) || 0,
+            skip_auto_move: document.getElementById('skip_auto_move')?.checked || false,
+            allow_samples: document.getElementById('allow_samples')?.checked || false,
+            skip_multi_season: document.getElementById('skip_multi_season')?.checked || false,
+            categories: (document.getElementById('categories')?.value || '')
+                .split(',').map((c) => c.trim()).filter(Boolean),
         };
+    }
+
+    populateReliabilitySettings(config) {
+        const preferCached = document.getElementById('prefer_cached_provider');
+        if (preferCached) {
+            preferCached.checked = config.prefer_cached_provider !== false;
+        }
+        ['stale_download_hours', 'stuck_complete_minutes', 'failover_timeout_hours', 'retries'].forEach((field) => {
+            const el = document.getElementById(field) || document.querySelector(`[name="${field}"]`);
+            if (el && config[field] !== undefined && config[field] !== null) {
+                el.value = config[field];
+            }
+        });
+        ['skip_auto_move', 'allow_samples', 'skip_multi_season'].forEach((field) => {
+            const el = document.getElementById(field);
+            if (el) el.checked = !!config[field];
+        });
+        if (config.categories && Array.isArray(config.categories)) {
+            const catEl = document.getElementById('categories');
+            if (catEl) catEl.value = config.categories.join(', ');
+        }
+        this.populateCategoryPaths(config.category_paths || {});
+    }
+
+    populateCategoryPaths(paths) {
+        const container = document.getElementById('categoryPathsContainer');
+        if (!container) return;
+        container.innerHTML = '';
+        const entries = Object.entries(paths || {});
+        if (entries.length === 0) {
+            this.addCategoryPathRow();
+            return;
+        }
+        entries.forEach(([category, path]) => this.addCategoryPathRow(category, path));
+    }
+
+    addCategoryPathRow(category = '', path = '') {
+        const container = document.getElementById('categoryPathsContainer');
+        if (!container) return;
+        const row = document.createElement('div');
+        row.className = 'flex flex-wrap gap-2 items-center category-path-row';
+        row.innerHTML = `
+            <input type="text" class="input input-sm flex-1 min-w-32 category-path-key" placeholder="Category" value="${window.decypharrUtils.escapeHtml(category)}">
+            <input type="text" class="input input-sm flex-[2] min-w-48 category-path-value" placeholder="/downloads/tv" value="${window.decypharrUtils.escapeHtml(path)}">
+            <button type="button" class="btn btn-ghost btn-sm btn-circle remove-category-path" title="Remove">
+                <i class="bi bi-trash text-error"></i>
+            </button>
+        `;
+        row.querySelector('.remove-category-path').addEventListener('click', () => row.remove());
+        container.appendChild(row);
+    }
+
+    collectCategoryPaths() {
+        const paths = {};
+        document.querySelectorAll('.category-path-row').forEach((row) => {
+            const key = row.querySelector('.category-path-key')?.value?.trim();
+            const val = row.querySelector('.category-path-value')?.value?.trim();
+            if (key && val) paths[key] = val;
+        });
+        return paths;
     }
 
     collectNotificationsConfig() {

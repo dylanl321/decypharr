@@ -12,15 +12,11 @@ import (
 func (s *Server) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	cfg := config.Get()
 	if cfg.NeedsAuth() {
-		http.Redirect(w, r, "/register", http.StatusSeeOther)
+		http.Redirect(w, r, cfg.URLBase+"register", http.StatusSeeOther)
 		return
 	}
 	if r.Method == "GET" {
-		data := map[string]interface{}{
-			"URLBase": cfg.URLBase,
-			"Page":    "login",
-			"Title":   "Login",
-		}
+		data := s.layoutData(r, "login", "Login", nil)
 		err := s.templates.ExecuteTemplate(w, "layout", data)
 		if err != nil {
 			s.logger.Warn().Err(err).Msg("error rendering /login template")
@@ -46,7 +42,7 @@ func (s *Server) LoginHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Error saving session", http.StatusInternalServerError)
 			return
 		}
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, cfg.URLBase, http.StatusSeeOther)
 		return
 	}
 
@@ -54,6 +50,7 @@ func (s *Server) LoginHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) LogoutHandler(w http.ResponseWriter, r *http.Request) {
+	cfg := config.Get()
 	session, _ := s.cookie.Get(r, "auth-session")
 	session.Values["authenticated"] = false
 	session.Options.MaxAge = -1
@@ -61,7 +58,7 @@ func (s *Server) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	http.Redirect(w, r, cfg.URLBase+"login", http.StatusSeeOther)
 }
 
 func (s *Server) RegisterHandler(w http.ResponseWriter, r *http.Request) {
@@ -69,11 +66,7 @@ func (s *Server) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	authCfg := cfg.GetAuth()
 
 	if r.Method == "GET" {
-		data := map[string]interface{}{
-			"URLBase": cfg.URLBase,
-			"Page":    "register",
-			"Title":   "registerVolume",
-		}
+		data := s.layoutData(r, "register", "Register", nil)
 		err := s.templates.ExecuteTemplate(w, "layout", data)
 		if err != nil {
 			s.logger.Warn().Err(err).Msg("error rendering /register template")
@@ -90,14 +83,12 @@ func (s *Server) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hash the password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		http.Error(w, "Error processing password", http.StatusInternalServerError)
 		return
 	}
 
-	// Set the credentials
 	authCfg.Username = username
 	authCfg.Password = string(hashedPassword)
 
@@ -106,7 +97,6 @@ func (s *Server) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create a session
 	session, _ := s.cookie.Get(r, "auth-session")
 	session.Values["authenticated"] = true
 	session.Values["username"] = username
@@ -115,17 +105,17 @@ func (s *Server) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, cfg.URLBase, http.StatusSeeOther)
 }
 
 func (s *Server) IndexHandler(w http.ResponseWriter, r *http.Request) {
 	cfg := config.Get()
-	data := map[string]interface{}{
-		"URLBase":    cfg.URLBase,
-		"Page":       "index",
-		"Title":      "Queues",
-		"SetupError": cfg.SetupError(),
-	}
+	data := s.layoutData(r, "index", "Queues", map[string]interface{}{
+		"SetupError":              cfg.SetupError(),
+		"SetupAlertMessage":       "Your configuration is incomplete (" + cfg.SetupError() + "). Please complete the setup in the",
+		"SetupAlertLink":          cfg.URLBase + "settings",
+		"SetupAlertLinkText":      "Settings page",
+	})
 	err := s.templates.ExecuteTemplate(w, "layout", data)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("error rendering /index template")
@@ -138,16 +128,16 @@ func (s *Server) DownloadHandler(w http.ResponseWriter, r *http.Request) {
 	for _, d := range cfg.Debrids {
 		debrids = append(debrids, d.Name)
 	}
-	data := map[string]interface{}{
-		"URLBase":                 cfg.URLBase,
-		"Page":                    "download",
-		"Title":                   "Download",
+	data := s.layoutData(r, "download", "Download", map[string]interface{}{
 		"Debrids":                 debrids,
 		"HasMultiDebrid":          len(debrids) > 1,
 		"downloadFolder":          cfg.DownloadFolder,
 		"alwaysRemoveTrackerURLS": cfg.AlwaysRmTrackerUrls,
 		"SetupError":              cfg.SetupError(),
-	}
+		"SetupAlertMessage":       "Your configuration is incomplete (" + cfg.SetupError() + "). Please complete the setup in the",
+		"SetupAlertLink":          cfg.URLBase + "settings",
+		"SetupAlertLinkText":      "Settings page",
+	})
 	err := s.templates.ExecuteTemplate(w, "layout", data)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("error rendering /download template")
@@ -156,12 +146,12 @@ func (s *Server) DownloadHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) RepairHandler(w http.ResponseWriter, r *http.Request) {
 	cfg := config.Get()
-	data := map[string]interface{}{
-		"URLBase":    cfg.URLBase,
-		"Page":       "repair",
-		"Title":      "Repair",
-		"SetupError": cfg.SetupError(),
-	}
+	data := s.layoutData(r, "repair", "Repair", map[string]interface{}{
+		"SetupError":        cfg.SetupError(),
+		"SetupAlertMessage": "Your configuration is incomplete (" + cfg.SetupError() + "). Please complete the setup in the",
+		"SetupAlertLink":    cfg.URLBase + "settings",
+		"SetupAlertLinkText": "Settings page",
+	})
 	err := s.templates.ExecuteTemplate(w, "layout", data)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("error rendering /repair template")
@@ -170,12 +160,9 @@ func (s *Server) RepairHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) ConfigHandler(w http.ResponseWriter, r *http.Request) {
 	cfg := config.Get()
-	data := map[string]interface{}{
-		"URLBase":    cfg.URLBase,
-		"Page":       "config",
-		"Title":      "Config",
+	data := s.layoutData(r, "config", "Config", map[string]interface{}{
 		"SetupError": cfg.SetupError(),
-	}
+	})
 	err := s.templates.ExecuteTemplate(w, "layout", data)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("error rendering /config template")
@@ -183,26 +170,32 @@ func (s *Server) ConfigHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) StatsHandler(w http.ResponseWriter, r *http.Request) {
-	cfg := config.Get()
-	data := map[string]interface{}{
-		"URLBase": cfg.URLBase,
-		"Page":    "stats",
-		"Title":   "Statistics",
-	}
+	data := s.layoutData(r, "stats", "Statistics", nil)
 	err := s.templates.ExecuteTemplate(w, "layout", data)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("error rendering /stats template")
 	}
 }
 
+func (s *Server) HealthHandler(w http.ResponseWriter, r *http.Request) {
+	cfg := config.Get()
+	data := s.layoutData(r, "health", "System Health", map[string]interface{}{
+		"SetupError": cfg.SetupError(),
+	})
+	err := s.templates.ExecuteTemplate(w, "layout", data)
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("error rendering /health template")
+	}
+}
+
 func (s *Server) BrowseHandler(w http.ResponseWriter, r *http.Request) {
 	cfg := config.Get()
-	data := map[string]interface{}{
-		"URLBase":    cfg.URLBase,
-		"Page":       "browse",
-		"Title":      "Browse Torrents",
-		"SetupError": cfg.SetupError(),
-	}
+	data := s.layoutData(r, "browse", "Browse Torrents", map[string]interface{}{
+		"SetupError":        cfg.SetupError(),
+		"SetupAlertMessage": "Your configuration is incomplete (" + cfg.SetupError() + "). Please complete the setup in the",
+		"SetupAlertLink":    cfg.URLBase + "settings",
+		"SetupAlertLinkText": "Settings page",
+	})
 	err := s.templates.ExecuteTemplate(w, "layout", data)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("error rendering /browse template")
