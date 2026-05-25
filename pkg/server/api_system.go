@@ -150,8 +150,8 @@ func (s *Server) handleGetDebridProviders(w http.ResponseWriter, r *http.Request
 	for _, d := range cfg.Debrids {
 		providers = append(providers, map[string]interface{}{
 			"name":    d.Name,
-			"type":    d.Type,
-			"enabled": d.Token != "",
+			"type":    d.Provider,
+			"enabled": d.APIKey != "",
 		})
 	}
 

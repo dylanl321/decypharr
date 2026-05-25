@@ -34,7 +34,7 @@ func (s *Server) handleDebridStatus(w http.ResponseWriter, r *http.Request) {
 	s.manager.Clients().Range(func(name string, client debrid.Client) bool {
 		status := DebridProviderStatus{
 			Name: name,
-			Type: string(client.Config().Type),
+			Type: string(client.Config().Provider),
 		}
 
 		profile, err := client.GetProfile()
@@ -110,11 +110,11 @@ func (s *Server) handleQueueSummary(w http.ResponseWriter, r *http.Request) {
 		response.ByProtocol[string(t.Protocol)]++
 
 		// Collect errors
-		if t.State == storage.EntryStateError && t.Error != "" {
+		if t.State == storage.EntryStateError && t.LastError != "" {
 			response.Errors = append(response.Errors, QueueErrorItem{
 				Hash:    t.InfoHash,
 				Name:    t.Name,
-				Error:   t.Error,
+				Error:   t.LastError,
 				AddedOn: t.AddedOn,
 			})
 		}

@@ -66,7 +66,7 @@ func (s *Server) handleRetryQueueItem(w http.ResponseWriter, r *http.Request) {
 	importReq := &manager.ImportRequest{
 		Magnet:         magnet,
 		Arr:            arr,
-		SelectedDebrid: torrent.DebridName,
+		SelectedDebrid: torrent.ActiveProvider,
 		DownloadFolder: config.Get().DownloadFolder,
 		Action:         config.Get().DefaultDownloadAction,
 	}
@@ -145,7 +145,7 @@ func (s *Server) handleDeleteCompleted(w http.ResponseWriter, r *http.Request) {
 	err := s.manager.Queue().DeleteWhere(
 		"",
 		config.ProtocolAll,
-		storage.EntryStateCompleted,
+		storage.EntryStatePausedUP,
 		nil,
 		nil,
 	)
@@ -203,7 +203,7 @@ func (s *Server) handleRetryAllErrors(w http.ResponseWriter, r *http.Request) {
 		importReq := &manager.ImportRequest{
 			Magnet:         magnet,
 			Arr:            arr,
-			SelectedDebrid: torrent.DebridName,
+			SelectedDebrid: torrent.ActiveProvider,
 			DownloadFolder: config.Get().DownloadFolder,
 			Action:         config.Get().DefaultDownloadAction,
 		}
