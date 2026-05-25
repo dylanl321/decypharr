@@ -44,6 +44,12 @@ func (s *Server) WebRoutes() http.Handler {
 
 		// API routes
 		r.Route("/api", func(r chi.Router) {
+			// Health and Status
+			r.Get("/health", s.handleHealth)
+			r.Get("/stats", s.stats.Handler())
+			r.Get("/debrid/status", s.handleDebridStatus)
+			r.Get("/queue/summary", s.handleQueueSummary)
+
 			// Arr management
 			r.Get("/arrs", s.handleGetArrs)
 			r.Post("/add", s.handleAddContent)
