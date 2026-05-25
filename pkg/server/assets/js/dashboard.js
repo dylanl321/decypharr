@@ -439,14 +439,14 @@ class TorrentDashboard {
                                 <span class="prov-chip-dot"></span>${this.escapeHtml(torrent.debrid)}
                             </span>` : '<span class="text-xs opacity-50">—</span>'}
                     </td>
-                    <td>
-                        <span class="badge badge-ghost">${this.formatSize(torrent.size)}</span>
+                    <td class="size-cell">
+                        <span class="text-sm font-mono whitespace-nowrap">${this.formatSize(torrent.size)}</span>
                     </td>
                     <td>
                         ${this.renderProgressCell(torrent)}
                     </td>
                     <td>
-                        <span class="text-sm font-mono">${this.formatSpeed(torrent.speed ?? torrent.dlspeed)}</span>
+                        <span class="text-sm font-mono whitespace-nowrap">${this.renderSpeed(torrent)}</span>
                     </td>
                     <td>
                         ${torrent.category ? `<span class="badge badge-sm badge-outline">${this.escapeHtml(torrent.category)}</span>` : '-'}
@@ -515,6 +515,18 @@ class TorrentDashboard {
     }
 
     renderProgressCell(torrent) {
+        const state = torrent.state;
+        if (state === 'error') {
+            return `<span class="text-xs opacity-60">—</span>`;
+        }
+        if (state === 'pausedUP') {
+            return `
+                <div class="flex items-center gap-2">
+                    <progress class="progress progress-success w-20" value="100" max="100"></progress>
+                    <span class="text-xs font-medium">100%</span>
+                </div>
+            `;
+        }
         const hasSplit = (torrent.debrid_progress > 0 || torrent.local_progress > 0) &&
             (torrent.debrid_progress < 1 || torrent.local_progress < 1);
         if (hasSplit) {
@@ -538,6 +550,13 @@ class TorrentDashboard {
             `;
         }
         return this.renderProgressBar(torrent.progress);
+    }
+
+    renderSpeed(torrent) {
+        if (torrent.state !== 'downloading') return '—';
+        const bps = torrent.speed ?? torrent.dlspeed;
+        if (!bps) return '—';
+        return this.formatSpeed(bps);
     }
 
     renderProgressBar(progress) {

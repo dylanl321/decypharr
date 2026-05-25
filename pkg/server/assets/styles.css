@@ -969,7 +969,7 @@ html.sidebar-collapsed .app-main {
 [data-prov="usenet"]     { --prov-color: var(--prov-usenet); }
 
 .prov-stripe {
-    box-shadow: inset 4px 0 0 0 var(--prov-color, hsl(var(--p)));
+    box-shadow: inset 4px 0 0 0 var(--prov-color, var(--color-primary, #6366f1));
 }
 
 .prov-chip {
@@ -978,23 +978,23 @@ html.sidebar-collapsed .app-main {
     gap: 0.35rem;
     padding: 0.18rem 0.55rem;
     border-radius: 999px;
-    background: hsl(var(--b2));
+    background: var(--color-base-200, #f3f4f6);
     font-size: 0.75rem;
     font-weight: 500;
-    border: 1px solid var(--prov-color, hsl(var(--bc) / 0.2));
-    color: hsl(var(--bc));
+    border: 1px solid var(--prov-color, var(--color-base-300, #d1d5db));
+    color: var(--color-base-content, #111827);
     cursor: pointer;
     transition: background 0.15s, transform 0.15s;
 }
 
 .prov-chip:hover {
-    background: var(--prov-color, hsl(var(--p)));
+    background: var(--prov-color, var(--color-primary, #6366f1));
     color: white;
     transform: translateY(-1px);
 }
 
 .prov-chip[data-active="true"] {
-    background: var(--prov-color, hsl(var(--p)));
+    background: var(--prov-color, var(--color-primary, #6366f1));
     color: white;
 }
 
@@ -1002,11 +1002,17 @@ html.sidebar-collapsed .app-main {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--prov-color, hsl(var(--p)));
+    background: var(--prov-color, var(--color-primary, #6366f1));
 }
 
 .prov-chip[data-active="true"] .prov-chip-dot {
     background: white;
+}
+
+/* Size column wants enough room for "1.23 GB" without wrapping */
+.size-cell {
+    min-width: 6.5rem;
+    white-space: nowrap;
 }
 
 /* =====================================================================
