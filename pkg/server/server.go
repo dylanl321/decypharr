@@ -67,6 +67,7 @@ type Server struct {
 	nzbUserAgent string
 	urlBase      string
 	restartFunc  func()
+	logBuffer    *LogBuffer
 }
 
 func New(mgr *manager.Manager) *Server {
@@ -101,6 +102,9 @@ func New(mgr *manager.Manager) *Server {
 
 	statsCollector := stats.New(mgr)
 
+	// Initialize log buffer
+	logBuffer := NewLogBuffer(1000)
+
 	s := &Server{
 		logger:    l,
 		manager:   mgr,
@@ -108,6 +112,7 @@ func New(mgr *manager.Manager) *Server {
 		cookie:    cookieStore,
 		templates: templates,
 		urlBase:   cfg.URLBase,
+		logBuffer: logBuffer,
 	}
 
 	qb := qbit.New(mgr)
