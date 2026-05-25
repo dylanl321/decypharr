@@ -149,12 +149,12 @@ func (m *Manager) Stream(ctx context.Context, entry *storage.Entry, filename str
 		return retry.Unrecoverable(fmt.Errorf("invalid stream range for file %s: %w", filename, err))
 	}
 
-	// Route based on protocol
-	if entry.Protocol == config.ProtocolNZB {
+	// Route based on protocol and backend
+	if entry.IsNNTPNZB() {
 		return m.streamUsenet(ctx, entry, filename, start, end, writer, onReady)
 	}
 
-	// Default to HTTP streaming for torrents
+	// Default to HTTP streaming for torrents and debrid-backed NZBs
 	return m.streamHTTP(ctx, entry, filename, start, end, writer, onReady)
 }
 
@@ -170,8 +170,11 @@ func (m *Manager) TrackStream(entry *storage.Entry, filename, client string) str
 	}
 
 	var source, debrid string
-	if entry.Protocol == config.ProtocolNZB {
+	if entry.IsNNTPNZB() {
 		source = "nzb"
+	} else if entry.IsNZB() {
+		source = "nzb"
+		debrid = entry.ActiveProvider
 	} else {
 		source = "torrent"
 		debrid = entry.ActiveProvider

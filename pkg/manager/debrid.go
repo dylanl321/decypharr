@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"errors"
 
+	"fmt"
+
 	"github.com/sirrobot01/decypharr/internal/config"
 	"github.com/sirrobot01/decypharr/internal/utils"
 	debrid "github.com/sirrobot01/decypharr/pkg/debrid/common"
@@ -26,6 +28,18 @@ func (m *Manager) ProviderClient(name string) debrid.Client {
 		return nil
 	}
 	return client
+}
+
+func (m *Manager) NZBProviderClient(name string) (debrid.NZBClient, error) {
+	client := m.ProviderClient(name)
+	if client == nil {
+		return nil, fmt.Errorf("debrid client not found: %s", name)
+	}
+	capable, ok := client.(debrid.NZBCapable)
+	if !ok || !capable.SupportsNZB() {
+		return nil, fmt.Errorf("debrid %q does not support NZB downloads", name)
+	}
+	return capable.AsNZBClient(), nil
 }
 
 func (m *Manager) initDebridClients() {

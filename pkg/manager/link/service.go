@@ -249,7 +249,19 @@ func (s *Service) fetchLink(ctx context.Context, entry *storage.Entry, filename 
 	}
 
 	// This uses account-level caching internally
-	downloadLink, err := client.GetDownloadLink(placement.ID, debridFile)
+	var downloadLink types.DownloadLink
+	if entry.IsNZB() && entry.ActiveProvider != "usenet" {
+		nzbCapable, ok := client.(debrid.NZBCapable)
+		if !ok || !nzbCapable.SupportsNZB() {
+			return emptyDownloadLink, NewPermanentError(
+				fmt.Errorf("debrid %s does not support NZB downloads", entry.ActiveProvider),
+				"client_not_nzb_capable",
+			)
+		}
+		downloadLink, err = nzbCapable.AsNZBClient().GetNZBDownloadLink(placement.ID, debridFile)
+	} else {
+		downloadLink, err = client.GetDownloadLink(placement.ID, debridFile)
+	}
 	if err != nil {
 		return downloadLink, err
 	}

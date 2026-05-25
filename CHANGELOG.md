@@ -4,6 +4,16 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap**, 
 
 ## [Unreleased]
 
+### Added
+
+#### NZB debrid provider backend
+
+- **`usenet.backend`:** Global switch between direct NNTP (`nntp`, default) and debrid-mediated NZB downloads (`debrid`).
+- **`usenet.debrid`:** Names the debrid provider used when backend is `debrid` (Torbox supported initially).
+- **Torbox usenet API:** Submit NZB files, poll status, fetch HTTP download links via `/api/usenet/*` endpoints.
+- **Manager routing:** Debrid-backed NZBs reuse torrent HTTP download/stream/link paths; NNTP path unchanged.
+- **Config UI:** Backend selector and Torbox debrid picker on the Usenet settings tab.
+
 ### Fixed
 
 #### Stuck at 100% without HTTP pull (#1, #3)

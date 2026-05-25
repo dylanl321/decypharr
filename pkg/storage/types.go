@@ -114,6 +114,10 @@ func (e *Entry) IsNZB() bool {
 	return e.Protocol == config.ProtocolNZB
 }
 
+func (e *Entry) IsNNTPNZB() bool {
+	return e.IsNZB() && e.ActiveProvider == "usenet"
+}
+
 func (e *Entry) Validate() error {
 	activeProvider := e.GetActiveProvider()
 	if activeProvider == nil {

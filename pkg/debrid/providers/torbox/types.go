@@ -104,3 +104,41 @@ type profileResponse struct {
 }
 
 type ProfileResponse APIResponse[profileResponse]
+
+type AddUsenetResponse APIResponse[struct {
+	UsenetDownloadID string `json:"usenetdownload_id"`
+	Hash             string `json:"hash"`
+	AuthId           string `json:"auth_id"`
+}]
+
+type torboxUsenetInfo struct {
+	Id               int         `json:"id"`
+	AuthId           string      `json:"auth_id"`
+	Hash             string      `json:"hash"`
+	Name             string      `json:"name"`
+	Size             int64       `json:"size"`
+	Active           bool        `json:"active"`
+	CreatedAt        time.Time   `json:"created_at"`
+	UpdatedAt        time.Time   `json:"updated_at"`
+	DownloadState    string      `json:"download_state"`
+	Progress         float64     `json:"progress"`
+	DownloadSpeed    int64       `json:"download_speed"`
+	DownloadFinished bool        `json:"download_finished"`
+	DownloadPresent  bool        `json:"download_present"`
+	Files            []struct {
+		Id           int    `json:"id"`
+		Name         string `json:"name"`
+		Size         int64  `json:"size"`
+		ShortName    string `json:"short_name"`
+		AbsolutePath string `json:"absolute_path"`
+		Mimetype     string `json:"mimetype"`
+	} `json:"files"`
+}
+
+type UsenetInfoResponse APIResponse[torboxUsenetInfo]
+type UsenetListResponse APIResponse[[]torboxUsenetInfo]
+type UsenetCachedResponse APIResponse[map[string]struct {
+	Name string `json:"name"`
+	Size int    `json:"size"`
+	Hash string `json:"hash"`
+}]

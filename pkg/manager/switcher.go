@@ -100,7 +100,7 @@ func (m *Manager) executeMigration(job *storage.SwitcherJob, torrent *storage.En
 
 		if sourcePlacement != nil {
 			torrent.RemoveProvider(job.SourceProvider, func(placement *storage.ProviderEntry) error {
-				return m.RemoveFromProvider(placement)
+				return m.RemoveFromProvider(torrent, placement)
 			})
 		}
 	}

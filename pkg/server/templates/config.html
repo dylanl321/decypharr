@@ -382,6 +382,38 @@
                         <!-- Usenet Sub-tab Content -->
                         <div class="provider-subtab-content hidden" data-provider-tab-content="usenet">
                             <div class="space-y-6">
+                                <!-- NZB Backend -->
+                                <div class="card bg-base-200">
+                                    <div class="card-body">
+                                        <h4 class="text-lg font-semibold mb-4 flex items-center">
+                                            <i class="bi bi-diagram-3 mr-2 text-primary"></i>NZB Backend
+                                        </h4>
+                                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                            <div>
+                                                <label class="label" for="usenet.backend">
+                                                    <span class="font-medium">Backend</span>
+                                                </label>
+                                                <select class="select select-bordered w-full" name="usenet.backend"
+                                                        id="usenet.backend">
+                                                    <option value="nntp">Direct NNTP</option>
+                                                    <option value="debrid">Debrid Provider</option>
+                                                </select>
+                                                <span class="text-sm opacity-70">How NZB downloads are fetched</span>
+                                            </div>
+                                            <div id="usenetDebridField">
+                                                <label class="label" for="usenet.debrid">
+                                                    <span class="font-medium">Debrid Provider</span>
+                                                </label>
+                                                <select class="select select-bordered w-full" name="usenet.debrid"
+                                                        id="usenet.debrid">
+                                                    <option value="">Select provider...</option>
+                                                </select>
+                                                <span class="text-sm opacity-70">Used when backend is Debrid Provider (Torbox)</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- Streaming Settings -->
                                 <div class="card bg-base-200">
                                     <div class="card-body">

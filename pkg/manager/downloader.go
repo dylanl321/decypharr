@@ -469,11 +469,14 @@ func limitedStringSample(values []string, limit int) []string {
 
 // processDownload downloads all files for an entry with progress tracking
 // For torrents: uses HTTP download from debrid
-// For NZBs: uses parallel NNTP segment download
+// For NNTP NZBs: uses parallel NNTP segment download
+// For debrid-backed NZBs: uses HTTP download from debrid
 func (d *Downloader) processDownload(entry *storage.Entry) error {
-	// Check if this is a usenet entry
-	if entry.IsNZB() {
+	if entry.IsNNTPNZB() {
 		return d.processUsenetDownload(entry)
+	}
+	if entry.IsNZB() {
+		return d.processTorrentDownload(entry)
 	}
 	return d.processTorrentDownload(entry)
 }

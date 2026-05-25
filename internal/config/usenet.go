@@ -4,8 +4,20 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 )
+
+type UsenetBackend string
+
+const (
+	UsenetBackendNNTP   UsenetBackend = "nntp"
+	UsenetBackendDebrid UsenetBackend = "debrid"
+)
+
+func (b UsenetBackend) Valid() bool {
+	return b == UsenetBackendNNTP || b == UsenetBackendDebrid
+}
 
 type UsenetProvider struct {
 	Host           string `json:"host,omitempty"` // Host of the usenet server
@@ -20,6 +32,8 @@ type UsenetProvider struct {
 
 // Usenet configuration for usenet streaming and downloading
 type Usenet struct {
+	Backend UsenetBackend `json:"backend,omitempty"` // nntp (default) or debrid
+	Debrid  string        `json:"debrid,omitempty"`  // debrid name when backend=debrid
 	Providers []UsenetProvider `json:"providers,omitempty"` // Usenet provider configurations
 	// Per-stream/file configuration
 	MaxConnections int `json:"max_connections,omitempty"` // Maximum concurrent connections per file for parsing and streaming (default: 10)
@@ -38,10 +52,13 @@ type Usenet struct {
 }
 
 func (u Usenet) IsZero() bool {
-	return len(u.Providers) == 0 && u.MaxConnections == 0 && u.ReadAhead == "" && u.ProcessingTimeout == ""
+	return u.Backend == "" && u.Debrid == "" && len(u.Providers) == 0 && u.MaxConnections == 0 && u.ReadAhead == "" && u.ProcessingTimeout == ""
 }
 
 func (c *Config) updateUsenetConfig() {
+	if c.Usenet.Backend == "" {
+		c.Usenet.Backend = UsenetBackendNNTP
+	}
 	// Per-stream configuration defaults
 	if c.Usenet.MaxConnections == 0 {
 		c.Usenet.MaxConnections = 15 // Default: 15 connections per file
@@ -93,7 +110,47 @@ func (c *Config) updateUsenetProvider(index int, u UsenetProvider) UsenetProvide
 	return u
 }
 
-func validateUsenet(providers []UsenetProvider) error {
+// ValidateUsenetConfig validates usenet backend settings (exported for tests).
+func ValidateUsenetConfig(usenet Usenet, debrids []Debrid) error {
+	return validateUsenetConfig(usenet, debrids)
+}
+
+func validateUsenetConfig(usenet Usenet, debrids []Debrid) error {
+	if usenet.Backend == "" {
+		usenet.Backend = UsenetBackendNNTP
+	}
+	if !usenet.Backend.Valid() {
+		return fmt.Errorf("invalid usenet backend %q: must be nntp or debrid", usenet.Backend)
+	}
+
+	switch usenet.Backend {
+	case UsenetBackendNNTP:
+		// Zero providers is allowed for torrent-only installs; NZB via NNTP fails at runtime.
+	case UsenetBackendDebrid:
+		if usenet.Debrid == "" {
+			return errors.New("usenet backend debrid requires usenet.debrid to be set")
+		}
+		if !slices.ContainsFunc(debrids, func(d Debrid) bool { return d.Name == usenet.Debrid }) {
+			return fmt.Errorf("usenet debrid %q is not configured in debrids", usenet.Debrid)
+		}
+		if !isNZBCapableDebrid(usenet.Debrid, debrids) {
+			return fmt.Errorf("debrid %q does not support NZB downloads", usenet.Debrid)
+		}
+	}
+
+	return validateUsenetProviders(usenet.Providers)
+}
+
+func isNZBCapableDebrid(name string, debrids []Debrid) bool {
+	for _, d := range debrids {
+		if d.Name == name {
+			return d.Provider == "torbox"
+		}
+	}
+	return false
+}
+
+func validateUsenetProviders(providers []UsenetProvider) error {
 	if len(providers) == 0 {
 		return nil
 	}
@@ -114,6 +171,13 @@ func validateUsenet(providers []UsenetProvider) error {
 }
 
 func (c *Config) applyUsenetEnvVars() {
+	if backend := getEnv("USENET__BACKEND"); backend != "" {
+		c.Usenet.Backend = UsenetBackend(backend)
+	}
+	if debrid := getEnv("USENET__DEBRID"); debrid != "" {
+		c.Usenet.Debrid = debrid
+	}
+
 	// Per-stream configuration
 	if maxConns := getEnv("USENET__MAX_CONNECTIONS"); maxConns != "" {
 		if v, err := strconv.Atoi(maxConns); err == nil {

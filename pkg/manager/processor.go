@@ -2,9 +2,13 @@ package manager
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/sirrobot01/decypharr/internal/config"
@@ -111,6 +115,16 @@ func (m *Manager) processQueuedEntries() {
 
 func (m *Manager) processQueuedNZB(entry *storage.Entry) {
 	defer m.processingEntries.Delete(entry.InfoHash)
+	if !entry.IsNNTPNZB() {
+		m.processQueuedNZBDebrid(entry)
+		return
+	}
+	if m.usenet == nil {
+		m.logger.Error().Str("name", entry.Name).Msg("Usenet client not configured for NNTP NZB")
+		entry.MarkAsError(fmt.Errorf("usenet client not configured"))
+		_ = m.queue.Update(entry)
+		return
+	}
 	// Check if the nzb is already processed
 	metadata, err := m.usenet.GetNZB(entry.InfoHash)
 	if err != nil {
@@ -390,4 +404,242 @@ func (m *Manager) SendToDebrid(ctx context.Context, importRequest *ImportRequest
 	}
 	joinedErrors := errors.Join(errs...)
 	return nil, fmt.Errorf("failed to process torrent: %w", joinedErrors)
+}
+
+func (m *Manager) processNewNZBDebrid(entry *storage.Entry, usenetDownload *debridTypes.UsenetDownload) {
+	entry.UpdatedAt = time.Now()
+	_ = m.queue.Update(entry)
+
+	backfillEntryFromDebrid(entry, usenetDownload.AsTorrent())
+	entry.Phase = storage.DownloadPhaseDebridFetching
+	entry.DebridProgress = usenetDownload.Progress / 100.0
+	entry.Progress = entry.DebridProgress
+	_ = m.queue.Update(entry)
+
+	if usenetDownload.Status != debridTypes.TorrentStatusDownloaded {
+		m.logger.Info().
+			Str("debrid", usenetDownload.Debrid).
+			Str("name", usenetDownload.Name).
+			Msg("Started downloading NZB via debrid")
+		return
+	}
+
+	m.processAction(entry)
+}
+
+func (m *Manager) processQueuedNZBDebrid(entry *storage.Entry) {
+	placement := entry.GetActiveProvider()
+	if placement == nil {
+		m.logger.Error().Str("name", entry.Name).Msg("No active placement found for queued NZB")
+		entry.MarkAsError(fmt.Errorf("no active placement found"))
+		_ = m.queue.Update(entry)
+		return
+	}
+
+	nzbClient, err := m.NZBProviderClient(entry.ActiveProvider)
+	if err != nil {
+		m.logger.Error().Err(err).Str("debrid", entry.ActiveProvider).Msg("NZB provider client not found")
+		entry.MarkAsError(err)
+		_ = m.queue.Update(entry)
+		return
+	}
+
+	arr := m.arr.GetOrCreate(entry.Category)
+	usenetDownload := &debridTypes.UsenetDownload{
+		Id:               placement.ID,
+		Hash:             entry.InfoHash,
+		Name:             entry.Name,
+		Arr:              arr,
+		Size:             entry.Size,
+		Files:            make(map[string]debridTypes.File),
+		DownloadUncached: entry.DownloadUncached,
+	}
+
+	updated, err := nzbClient.CheckNZBStatus(context.Background(), usenetDownload)
+	if err != nil {
+		m.logger.Error().Err(err).Str("name", entry.Name).Msg("Error checking NZB debrid status")
+		entry.MarkAsError(err)
+		_ = m.queue.Update(entry)
+		if updated != nil && updated.Id != "" {
+			go func(id string) {
+				_ = nzbClient.DeleteNZB(id)
+			}(updated.Id)
+		}
+		return
+	}
+	usenetDownload = updated
+
+	entry.DebridProgress = usenetDownload.Progress / 100.0
+	entry.Progress = entry.DebridProgress
+	entry.Speed = usenetDownload.Speed
+	entry.Size = usenetDownload.GetSize()
+	entry.UpdatedAt = time.Now()
+	if entry.Phase == "" || entry.Phase == storage.DownloadPhaseQueued {
+		entry.Phase = storage.DownloadPhaseDebridFetching
+	}
+	if placement := entry.GetActiveProvider(); placement != nil {
+		touchProviderProgress(placement, entry.DebridProgress)
+	}
+	_ = m.queue.Update(entry)
+
+	debridComplete := usenetDownload.Status == debridTypes.TorrentStatusDownloaded ||
+		(entry.DebridProgress >= 1.0 && len(usenetDownload.Files) > 0 && usenetDownload.Status != debridTypes.TorrentStatusError)
+
+	if debridComplete {
+		backfillEntryFromDebrid(entry, usenetDownload.AsTorrent())
+		_ = m.queue.Update(entry)
+		m.processAction(entry)
+	}
+}
+
+func nzbContentHash(content []byte) string {
+	sum := md5.Sum(content)
+	return strings.ToUpper(hex.EncodeToString(sum[:]))
+}
+
+// SendToNZBDebrid submits an NZB to a debrid provider that supports usenet downloads.
+func (m *Manager) SendToNZBDebrid(ctx context.Context, importRequest *ImportRequest) (*debridTypes.UsenetDownload, error) {
+	hash := nzbContentHash(importRequest.NZBContent)
+	usenetDownload := &debridTypes.UsenetDownload{
+		Hash:       hash,
+		Name:       importRequest.Name,
+		Filename:   filepath.Base(importRequest.Name),
+		Arr:        importRequest.Arr,
+		NZBContent: importRequest.NZBContent,
+		Files:      make(map[string]debridTypes.File),
+	}
+
+	clients := m.orderedNamedNZBClients(importRequest.SelectedDebrid)
+	if len(clients) == 0 {
+		return nil, fmt.Errorf("no NZB-capable debrid clients available")
+	}
+
+	if config.Get().PreferCached() {
+		if cached, ok := m.selectCachedNZBProvider(ctx, hash, importRequest.SelectedDebrid); ok {
+			clients = []namedNZBClient{cached}
+		}
+	}
+
+	errs := make([]error, 0, len(clients))
+	for _, item := range clients {
+		client := item.client
+		overrideDownloadUncached := false
+		if importRequest.DownloadUncached != nil {
+			overrideDownloadUncached = *importRequest.DownloadUncached
+		} else if importRequest.Arr != nil && importRequest.Arr.DownloadUncached != nil {
+			overrideDownloadUncached = *importRequest.Arr.DownloadUncached
+		} else if dc := m.debridConfigByName(item.name); dc != nil {
+			overrideDownloadUncached = dc.DownloadUncached
+		}
+		usenetDownload.DownloadUncached = overrideDownloadUncached
+
+		dl := *usenetDownload
+		submitted, err := client.SubmitNZB(ctx, &dl)
+		if err != nil || submitted == nil || submitted.Id == "" {
+			if err != nil {
+				errs = append(errs, err)
+			} else {
+				errs = append(errs, fmt.Errorf("failed to submit nzb to %s", item.name))
+			}
+			continue
+		}
+		submitted.Debrid = item.name
+		submitted.Arr = importRequest.Arr
+		submitted.DownloadUncached = overrideDownloadUncached
+
+		updated, err := client.CheckNZBStatus(ctx, submitted)
+		if err != nil && updated != nil && updated.Id != "" {
+			go func(id string, c common.NZBClient) {
+				_ = c.DeleteNZB(id)
+			}(updated.Id, client)
+		}
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if updated == nil {
+			errs = append(errs, fmt.Errorf("nzb %s returned nil after checking status", submitted.Name))
+			continue
+		}
+		updated.Debrid = item.name
+		return updated, nil
+	}
+	if len(errs) == 0 {
+		return nil, fmt.Errorf("failed to process nzb: no clients available")
+	}
+	return nil, fmt.Errorf("failed to process nzb: %w", errors.Join(errs...))
+}
+
+type namedNZBClient struct {
+	name   string
+	client common.NZBClient
+}
+
+func (m *Manager) orderedNamedNZBClients(selectedDebrid string) []namedNZBClient {
+	cfg := config.Get()
+	out := make([]namedNZBClient, 0, len(cfg.Debrids))
+	for _, dc := range cfg.Debrids {
+		if selectedDebrid != "" && dc.Name != selectedDebrid {
+			continue
+		}
+		client, err := m.NZBProviderClient(dc.Name)
+		if err == nil && client != nil {
+			out = append(out, namedNZBClient{name: dc.Name, client: client})
+		}
+	}
+	return out
+}
+
+func (m *Manager) debridConfigByName(name string) *config.Debrid {
+	for _, dc := range config.Get().Debrids {
+		if dc.Name == name {
+			copy := dc
+			return &copy
+		}
+	}
+	return nil
+}
+
+func (m *Manager) selectCachedNZBProvider(ctx context.Context, hash string, selectedDebrid string) (namedNZBClient, bool) {
+	clients := m.orderedNamedNZBClients(selectedDebrid)
+	if len(clients) == 0 || hash == "" {
+		return namedNZBClient{}, false
+	}
+	hash = strings.ToUpper(hash)
+
+	ctx, cancel := context.WithTimeout(ctx, cacheCheckTimeout)
+	defer cancel()
+
+	type probeResult struct {
+		item   namedNZBClient
+		cached bool
+	}
+	results := make([]probeResult, len(clients))
+	var wg sync.WaitGroup
+	wg.Add(len(clients))
+	for i, item := range clients {
+		i, item := i, item
+		go func() {
+			defer wg.Done()
+			results[i].item = item
+			avail := item.client.IsNZBAvailable([]string{hash})
+			if avail != nil && avail[hash] {
+				results[i].cached = true
+			}
+		}()
+	}
+	wg.Wait()
+
+	for _, item := range clients {
+		for _, r := range results {
+			if r.cached && r.item.name == item.name {
+				m.logger.Info().
+					Str("provider", item.name).
+					Str("hash", hash).
+					Msg("Pre-flight cache check: NZB cached on provider")
+				return item, true
+			}
+		}
+	}
+	return namedNZBClient{}, false
 }

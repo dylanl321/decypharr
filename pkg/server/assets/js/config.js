@@ -82,7 +82,7 @@ class ConfigManager {
 
         // Load usenet config
         if (config.usenet) {
-            this.populateUsenetSettings(config.usenet);
+            this.populateUsenetSettings(config.usenet, config.debrids || []);
         }
 
         // Load virtual folders
@@ -1315,6 +1315,8 @@ class ConfigManager {
         });
 
         return {
+            backend: document.querySelector('[name="usenet.backend"]')?.value || 'nntp',
+            debrid: document.querySelector('[name="usenet.debrid"]')?.value || '',
             providers: providers,
             max_connections: parseInt(document.querySelector('[name="usenet.max_connections"]')?.value) || 10,
             read_ahead: document.querySelector('[name="usenet.read_ahead"]').value || "32MB",
@@ -1735,7 +1737,21 @@ class ConfigManager {
     }
 
     // Usenet Configuration Methods
-    populateUsenetSettings(usenet) {
+    populateUsenetSettings(usenet, debrids = []) {
+        this.populateNZBDebridOptions(debrids, usenet.debrid);
+
+        const backendInput = document.querySelector('[name="usenet.backend"]');
+        if (backendInput) {
+            backendInput.value = usenet.backend || 'nntp';
+            backendInput.addEventListener('change', () => this.updateUsenetBackendVisibility());
+            this.updateUsenetBackendVisibility();
+        }
+
+        const debridInput = document.querySelector('[name="usenet.debrid"]');
+        if (debridInput && usenet.debrid) {
+            debridInput.value = usenet.debrid;
+        }
+
         // Populate providers
         if (usenet.providers && Array.isArray(usenet.providers)) {
             usenet.providers.forEach(provider => this.addUsenetProvider(provider));
@@ -1758,6 +1774,30 @@ class ConfigManager {
                 input.value = value;
             }
         });
+    }
+
+    populateNZBDebridOptions(debrids, selected) {
+        const select = document.querySelector('[name="usenet.debrid"]');
+        if (!select) return;
+        select.innerHTML = '<option value="">Select provider...</option>';
+        for (const debrid of debrids) {
+            if (!debrid || debrid.provider !== 'torbox') continue;
+            const opt = document.createElement('option');
+            opt.value = debrid.name;
+            opt.textContent = debrid.name;
+            if (selected && selected === debrid.name) {
+                opt.selected = true;
+            }
+            select.appendChild(opt);
+        }
+    }
+
+    updateUsenetBackendVisibility() {
+        const backend = document.querySelector('[name="usenet.backend"]')?.value || 'nntp';
+        const debridField = document.getElementById('usenetDebridField');
+        if (debridField) {
+            debridField.classList.toggle('hidden', backend !== 'debrid');
+        }
     }
 
     addUsenetProvider(data = {}) {

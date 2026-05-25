@@ -1,11 +1,18 @@
 ---
 title: Usenet Configuration
-description: Direct NNTP streaming configuration.
+description: Direct NNTP or debrid-provider NZB configuration.
 ---
 
-Decypharr supports direct NNTP streaming from Usenet providers - no additional download client required.
+Decypharr supports NZB downloads via **direct NNTP** or a **debrid provider** (Torbox today). Choose the backend globally with `usenet.backend`.
 
-## How It Works
+## NZB Backend
+
+| Backend | Config | Description |
+|---------|--------|-------------|
+| `nntp` (default) | `usenet.providers[]` | Parse NZBs locally and fetch articles over NNTP |
+| `debrid` | `usenet.debrid` | Submit NZBs to a debrid provider; download/stream via HTTP like torrents |
+
+### Direct NNTP
 
 Decypharr connects directly to NNTP servers to:
 
@@ -13,13 +20,36 @@ Decypharr connects directly to NNTP servers to:
 2. Stream segments on-demand for playback
 3. Download and assemble complete files
 
-## Provider Configuration
+### Debrid Provider (Torbox)
 
-### Add Provider
+When `usenet.backend` is `debrid`, Decypharr submits NZB files to Torbox, polls until the provider finishes repair/unpack, then uses the same HTTP download/stream path as torrents. NNTP server credentials are **not** required.
 
 ```json
 {
   "usenet": {
+    "backend": "debrid",
+    "debrid": "torbox"
+  },
+  "debrids": [
+    {
+      "name": "torbox",
+      "provider": "torbox",
+      "api_key": "YOUR_API_KEY"
+    }
+  ]
+}
+```
+
+Environment variables: `USENET__BACKEND=debrid`, `USENET__DEBRID=torbox`.
+
+## Provider Configuration
+
+### Add NNTP Provider
+
+```json
+{
+  "usenet": {
+    "backend": "nntp",
     "providers": [
       {
         "host": "news.provider.com",

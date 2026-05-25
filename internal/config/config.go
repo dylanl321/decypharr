@@ -244,7 +244,7 @@ func (c *Config) Validate() error {
 		return err
 	}
 
-	if err := validateUsenet(c.Usenet.Providers); err != nil {
+	if err := validateUsenetConfig(c.Usenet, c.Debrids); err != nil {
 		return err
 	}
 
@@ -252,8 +252,9 @@ func (c *Config) Validate() error {
 		return errors.New("download folder is required")
 	}
 
-	// If either debrid or usenet is enabled, at least one must be configured
-	if len(c.Debrids) == 0 && len(c.Usenet.Providers) == 0 {
+	hasNNTP := c.Usenet.Backend == UsenetBackendNNTP && len(c.Usenet.Providers) > 0
+	hasDebridBackend := c.Usenet.Backend == UsenetBackendDebrid && c.Usenet.Debrid != ""
+	if len(c.Debrids) == 0 && !hasNNTP && !hasDebridBackend {
 		return errors.New("at least one debrid provider or usenet provider must be configured")
 	}
 
