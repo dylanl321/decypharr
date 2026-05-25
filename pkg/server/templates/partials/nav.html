@@ -2,9 +2,10 @@
 {{ range .Items }}
 <li>
     <a href="{{.Href}}"{{if .External}} target="_blank" rel="noopener noreferrer"{{end}}
-       class="{{if eq $.ActivePage .Page}}menu-active{{end}}{{if $.Compact}} gap-2{{end}}">
-        <i class="bi {{.Icon}}{{if $.Compact}} text-primary{{end}}"></i>
-        {{if not $.IconOnly}}<span{{if $.Compact}}{{else}} class="hidden xl:inline"{{end}}>{{.Label}}</span>{{end}}
+       class="sidebar-link{{if eq $.ActivePage .Page}} sidebar-link-active{{end}}">
+        <i class="bi {{.Icon}} sidebar-icon"></i>
+        <span class="sidebar-label">{{.Label}}</span>
+        {{if .External}}<i class="bi bi-box-arrow-up-right sidebar-external"></i>{{end}}
     </a>
 </li>
 {{ end }}

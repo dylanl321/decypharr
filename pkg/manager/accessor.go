@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/puzpuzpuz/xsync/v4"
+	"github.com/sirrobot01/decypharr/internal/config"
 	"github.com/sirrobot01/decypharr/pkg/arr"
 	debrid "github.com/sirrobot01/decypharr/pkg/debrid/common"
 	debridTypes "github.com/sirrobot01/decypharr/pkg/debrid/types"
@@ -63,4 +64,23 @@ func (m *Manager) Usenet() *usenet.Usenet {
 // GetDebridSpeedTestResult returns stored speed test result for a specific debrid provider
 func (m *Manager) GetDebridSpeedTestResult(provider string) (debridTypes.SpeedTestResult, bool) {
 	return m.debridSpeedTestResults.Load(provider)
+}
+
+// BandwidthSnapshot returns the active bandwidth caps and total shaped bytes
+// in a UI-friendly form. Returns zero-values when shaping isn't initialized.
+func (m *Manager) BandwidthSnapshot() (global int64, perProvider map[string]int64, totalBytes int64) {
+	if m == nil || m.bandwidth == nil {
+		return 0, map[string]int64{}, 0
+	}
+	snap := m.bandwidth.Snapshot()
+	return snap.GlobalBytes, snap.ProviderBytes, m.bandwidth.TotalBytes()
+}
+
+// ReloadBandwidth re-reads bandwidth caps from the live config. Safe to call
+// from API handlers after config mutation.
+func (m *Manager) ReloadBandwidth() {
+	if m == nil || m.bandwidth == nil {
+		return
+	}
+	m.bandwidth.Reload(config.Get())
 }

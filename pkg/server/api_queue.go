@@ -28,6 +28,62 @@ func (s *Server) handleGetQueueItem(w http.ResponseWriter, r *http.Request) {
 	utils.JSONResponse(w, torrent, http.StatusOK)
 }
 
+// handleGetQueueTimeline returns the lifecycle event log for a queue entry.
+// Falls back to a synthesized timeline if no events have been persisted yet
+// (e.g. the entry predates timeline support) so the UI is never empty.
+func (s *Server) handleGetQueueTimeline(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+	if hash == "" {
+		http.Error(w, "No hash provided", http.StatusBadRequest)
+		return
+	}
+
+	torrent, err := s.manager.Queue().GetTorrent(hash)
+	if err != nil || torrent == nil {
+		http.Error(w, "Queue item not found", http.StatusNotFound)
+		return
+	}
+
+	events := torrent.Timeline
+	if len(events) == 0 {
+		events = synthesizeTimeline(torrent)
+	}
+	utils.JSONResponse(w, map[string]interface{}{
+		"hash":     torrent.InfoHash,
+		"name":     torrent.Name,
+		"provider": torrent.ActiveProvider,
+		"timeline": events,
+	}, http.StatusOK)
+}
+
+// synthesizeTimeline reconstructs a coarse event log from existing timestamp
+// fields on the entry. Used for entries created before the feature shipped.
+func synthesizeTimeline(t *storage.Entry) []storage.TimelineEvent {
+	out := make([]storage.TimelineEvent, 0, 4)
+	if !t.AddedOn.IsZero() {
+		out = append(out, storage.TimelineEvent{At: t.AddedOn, Kind: storage.TimelineAdded})
+	}
+	if t.DebridProgress >= 1.0 && !t.UpdatedAt.IsZero() {
+		out = append(out, storage.TimelineEvent{
+			At: t.UpdatedAt, Kind: storage.TimelineDebridReady, Provider: t.ActiveProvider,
+		})
+	}
+	if t.CompletedAt != nil {
+		out = append(out, storage.TimelineEvent{
+			At: *t.CompletedAt, Kind: storage.TimelineLocalDownloadDone, Provider: t.ActiveProvider,
+		})
+	}
+	if t.LastErrorTime != nil && t.LastError != "" {
+		out = append(out, storage.TimelineEvent{
+			At: *t.LastErrorTime, Kind: storage.TimelineError, Message: t.LastError,
+		})
+	}
+	if t.ImportedAt != nil {
+		out = append(out, storage.TimelineEvent{At: *t.ImportedAt, Kind: storage.TimelineImported})
+	}
+	return out
+}
+
 // handleRetryQueueItem retries/requeues a failed item
 func (s *Server) handleRetryQueueItem(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,7 +13,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var storeNames = []string{"entries", "queue", "items", "repair_state", "repair_runs"}
+var storeNames = []string{"entries", "queue", "items", "repair_state", "repair_runs", "timeline"}
 
 // legacyStoreNames are buckets from the v1 repair system. They are removed
 // on startup so they don't accumulate dead data.
@@ -25,6 +26,7 @@ type Storage struct {
 	entryItems  *hybrid.Store
 	repairState *hybrid.Store
 	repairRuns  *hybrid.Store
+	timeline    *hybrid.Store
 	dir         string
 	logger      zerolog.Logger
 }
@@ -87,6 +89,7 @@ func NewStorage(dbPath string) (*Storage, error) {
 		entryItems:  itemStores["items"],
 		repairState: itemStores["repair_state"],
 		repairRuns:  itemStores["repair_runs"],
+		timeline:    itemStores["timeline"],
 		dir:         dbPath,
 		logger:      log,
 	}
@@ -102,7 +105,7 @@ func NewStorage(dbPath string) (*Storage, error) {
 
 func (s *Storage) Close() error {
 	var errs []error
-	stores := []*hybrid.Store{s.entries, s.queue, s.entryItems, s.repairState, s.repairRuns}
+	stores := []*hybrid.Store{s.entries, s.queue, s.entryItems, s.repairState, s.repairRuns, s.timeline}
 	for _, store := range stores {
 		if store == nil {
 			continue
@@ -120,7 +123,7 @@ func (s *Storage) Close() error {
 // DiskSize returns the total on-disk size of all stores (O(1), no filesystem walk).
 func (s *Storage) DiskSize() int64 {
 	var size int64
-	for _, store := range []*hybrid.Store{s.entries, s.queue, s.entryItems, s.repairState, s.repairRuns} {
+	for _, store := range []*hybrid.Store{s.entries, s.queue, s.entryItems, s.repairState, s.repairRuns, s.timeline} {
 		if store != nil {
 			size += store.DiskSize()
 		}
@@ -162,6 +165,7 @@ func (s *Storage) copyFrom(other *Storage) error {
 		{"items", other.entryItems, s.entryItems},
 		{"repair_state", other.repairState, s.repairState},
 		{"repair_runs", other.repairRuns, s.repairRuns},
+		{"timeline", other.timeline, s.timeline},
 	}
 
 	for _, p := range pairs {
@@ -175,4 +179,74 @@ func (s *Storage) copyFrom(other *Storage) error {
 		}
 	}
 	return nil
+}
+
+// =============================================================================
+// Timeline persistence (sidecar bucket keyed by Entry.InfoHash)
+// =============================================================================
+
+// GetTimeline returns the persisted lifecycle events for an Entry. Returns
+// nil (no error) when no events have been recorded yet.
+func (s *Storage) GetTimeline(infoHash string) ([]TimelineEvent, error) {
+	if s.timeline == nil || infoHash == "" {
+		return nil, nil
+	}
+	data, err := s.timeline.Get(infoHash)
+	if err != nil {
+		return nil, nil
+	}
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var events []TimelineEvent
+	if err := json.Unmarshal(data, &events); err != nil {
+		return nil, fmt.Errorf("decode timeline for %s: %w", infoHash, err)
+	}
+	return events, nil
+}
+
+// PutTimeline persists the full timeline slice for an Entry. Caller is
+// responsible for bounding via MaxTimelineEvents (Entry.AppendEvent does this).
+func (s *Storage) PutTimeline(infoHash string, events []TimelineEvent) error {
+	if s.timeline == nil || infoHash == "" {
+		return nil
+	}
+	if len(events) == 0 {
+		return s.timeline.Put(infoHash, nil, nil)
+	}
+	data, err := json.Marshal(events)
+	if err != nil {
+		return fmt.Errorf("encode timeline for %s: %w", infoHash, err)
+	}
+	return s.timeline.Put(infoHash, data, nil)
+}
+
+// AppendTimelineEvent reads, appends, and writes back atomically enough for
+// the cooperative single-writer queue. Returns the appended event for callers
+// that want to forward it elsewhere (e.g. SSE).
+func (s *Storage) AppendTimelineEvent(infoHash string, ev TimelineEvent) error {
+	if s.timeline == nil || infoHash == "" {
+		return nil
+	}
+	existing, _ := s.GetTimeline(infoHash)
+	if n := len(existing); n > 0 {
+		last := existing[n-1]
+		if last.Kind == ev.Kind && last.Provider == ev.Provider && last.Message == ev.Message &&
+			ev.At.Sub(last.At) < time.Second {
+			return nil
+		}
+	}
+	existing = append(existing, ev)
+	if len(existing) > MaxTimelineEvents {
+		existing = existing[len(existing)-MaxTimelineEvents:]
+	}
+	return s.PutTimeline(infoHash, existing)
+}
+
+// DeleteTimeline removes the timeline for an entry (used when entry is removed).
+func (s *Storage) DeleteTimeline(infoHash string) error {
+	if s.timeline == nil || infoHash == "" {
+		return nil
+	}
+	return s.timeline.Delete(infoHash)
 }

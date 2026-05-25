@@ -30,7 +30,8 @@ const minifyOptions = {
         reserved: [
             '$', 'jQuery', 'decypharrUtils', 'configManager', 'repairManager',
             'RepairManager', 'RepairUtils', 'ConfigManager', 'StatsPage', 'HealthPage',
-            'TorrentDashboard', 'DownloadManager', 'window', 'document'
+            'TorrentDashboard', 'DownloadManager', 'OverviewPage', 'TimelineDrawer',
+            'ApexCharts', 'providerColor', 'providerSlug', 'pollingBuffer', 'window', 'document'
         ]
     },
     format: {

@@ -12,6 +12,7 @@ class TorrentDashboard {
             searchQuery: '',
             selectedCategory: '',
             selectedState: '',
+            providerFilter: '',
             sortBy: 'added_on',
             sortOrder: 'desc',
             selectedTorrentContextMenu: null
@@ -30,18 +31,83 @@ class TorrentDashboard {
             torrentContextMenu: document.getElementById('torrentContextMenu'),
             paginationControls: document.getElementById('paginationControls'),
             paginationInfo: document.getElementById('paginationInfo'),
-            emptyState: document.getElementById('emptyState')
+            emptyState: document.getElementById('emptyState'),
+            providerChips: document.getElementById('providerChips'),
+            providerChipsLoading: document.getElementById('providerChipsLoading'),
+            summaryPills: document.getElementById('summaryPills'),
+            densityCozy: document.getElementById('densityCozy'),
+            densityCompact: document.getElementById('densityCompact'),
         };
 
         this.searchTimeout = null;
+        this.timeline = new TimelineDrawer();
         this.init();
     }
 
     init() {
         this.applyURLSearch();
+        this.applyDensity();
         this.bindEvents();
+        this.loadProviderChips();
+        this.loadSummary();
         this.loadTorrents();
         this.startAutoRefresh();
+    }
+
+    applyDensity() {
+        const d = window.getDensity ? window.getDensity() : 'cozy';
+        if (this.refs.densityCozy) this.refs.densityCozy.classList.toggle('btn-active', d === 'cozy');
+        if (this.refs.densityCompact) this.refs.densityCompact.classList.toggle('btn-active', d === 'compact');
+    }
+
+    async loadProviderChips() {
+        if (!this.refs.providerChips) return;
+        try {
+            const res = await window.decypharrUtils.fetcher('/api/debrid/status');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            const providers = data.providers || [];
+            if (this.refs.providerChipsLoading) this.refs.providerChipsLoading.remove();
+            const existing = this.refs.providerChips.querySelectorAll('[data-prov-chip-name]');
+            existing.forEach(n => n.remove());
+            providers.forEach(p => {
+                const slug = window.providerSlug(p.type || p.name);
+                const color = window.providerColor(p.type || p.name);
+                const chip = document.createElement('span');
+                chip.className = 'prov-chip';
+                chip.dataset.provFilter = p.name;
+                chip.dataset.provChipName = p.name;
+                chip.dataset.prov = slug;
+                chip.style.setProperty('--prov-color', color);
+                chip.innerHTML = `<span class="prov-chip-dot"></span> ${window.decypharrUtils.escapeHtml(p.name)}`;
+                this.refs.providerChips.appendChild(chip);
+            });
+        } catch (err) {
+            if (this.refs.providerChipsLoading) {
+                this.refs.providerChipsLoading.textContent = 'unavailable';
+            }
+        }
+    }
+
+    async loadSummary() {
+        try {
+            const res = await window.decypharrUtils.fetcher('/api/queue/summary');
+            if (!res.ok) return;
+            const data = await res.json();
+            const byState = data.by_state || {};
+            const total = data.total || 0;
+            const setText = (id, val) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = String(val || 0);
+            };
+            setText('pillTotal', total);
+            setText('pillDownloading', byState.downloading || 0);
+            setText('pillQueued', byState.queued || 0);
+            setText('pillCompleted', byState.pausedUP || 0);
+            setText('pillErrors', byState.error || (data.errors ? data.errors.length : 0));
+        } catch (err) {
+            // Silent fail - summary is best-effort
+        }
     }
 
     applyURLSearch() {
@@ -107,11 +173,60 @@ class TorrentDashboard {
         // Context menu
         this.bindContextMenu();
 
+        // Density toggle
+        if (this.refs.densityCozy) {
+            this.refs.densityCozy.addEventListener('click', () => {
+                window.setDensity('cozy');
+                this.applyDensity();
+            });
+        }
+        if (this.refs.densityCompact) {
+            this.refs.densityCompact.addEventListener('click', () => {
+                window.setDensity('compact');
+                this.applyDensity();
+            });
+        }
+
+        // Provider chip click
+        if (this.refs.providerChips) {
+            this.refs.providerChips.addEventListener('click', (e) => {
+                const chip = e.target.closest('[data-prov-filter]');
+                if (!chip) return;
+                this.state.providerFilter = chip.dataset.provFilter || '';
+                this.refs.providerChips.querySelectorAll('[data-prov-filter]').forEach(c =>
+                    c.setAttribute('data-active', c === chip ? 'true' : 'false'));
+                this.renderTorrents();
+            });
+        }
+
+        // Summary pills
+        if (this.refs.summaryPills) {
+            this.refs.summaryPills.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-state-pill]');
+                if (!btn) return;
+                this.state.selectedState = btn.dataset.statePill || '';
+                if (this.refs.stateFilter) this.refs.stateFilter.value = this.state.selectedState;
+                this.refs.summaryPills.querySelectorAll('[data-state-pill]').forEach(b =>
+                    b.setAttribute('data-active', b === btn ? 'true' : 'false'));
+                this.state.currentPage = 1;
+                this.loadTorrents();
+            });
+        }
+
         // Torrent selection
         this.refs.torrentsList.addEventListener('change', (e) => {
             if (e.target.classList.contains('torrent-select')) {
                 this.toggleTorrentSelection(e.target.dataset.hash, e.target.checked);
             }
+        });
+
+        // Click row name to open timeline drawer
+        this.refs.torrentsList.addEventListener('click', (e) => {
+            const trigger = e.target.closest('[data-action="open-timeline"]');
+            if (!trigger) return;
+            const row = trigger.closest('tr[data-hash]');
+            if (!row) return;
+            this.timeline.open({ hash: row.dataset.hash, name: row.dataset.name, debrid: row.dataset.prov });
         });
     }
 
@@ -146,7 +261,8 @@ class TorrentDashboard {
         this.state.selectedTorrentContextMenu = {
             hash: row.dataset.hash,
             name: row.dataset.name,
-            category: row.dataset.category || ''
+            category: row.dataset.category || '',
+            debrid: row.dataset.prov || ''
         };
 
         this.refs.torrentContextMenu.querySelector('.torrent-name').textContent =
@@ -173,6 +289,9 @@ class TorrentDashboard {
         if (!torrent) return;
 
         const actions = {
+            'open-timeline': async () => {
+                this.timeline.open({ hash: torrent.hash, name: torrent.name, debrid: torrent.debrid });
+            },
             'copy-magnet': async () => {
                 try {
                     await navigator.clipboard.writeText(`magnet:?xt=urn:btih:${torrent.hash}`);
@@ -207,7 +326,6 @@ class TorrentDashboard {
             // Show loading state
             this.refs.refreshBtn.disabled = true;
             this.refs.paginationInfo.textContent = 'Loading torrents...';
-
             // Build query parameters
             const params = new URLSearchParams({
                 page: this.state.currentPage,
@@ -280,15 +398,26 @@ class TorrentDashboard {
     }
 
     renderTorrents() {
-        if (this.state.torrents.length === 0) {
+        const list = this.state.providerFilter
+            ? this.state.torrents.filter(t => (t.debrid || '') === this.state.providerFilter)
+            : this.state.torrents;
+
+        if (list.length === 0) {
             this.refs.torrentsList.innerHTML = '';
             return;
         }
 
-        this.refs.torrentsList.innerHTML = this.state.torrents.map(torrent => {
+        this.refs.torrentsList.innerHTML = list.map(torrent => {
             const isSelected = this.state.selectedEntries.has(torrent.info_hash);
+            const provSlug = window.providerSlug(torrent.debrid);
+            const provColor = window.providerColor(torrent.debrid);
+            const protoIcon = torrent.protocol === 'nzb' ? 'bi-newspaper' : 'bi-magnet';
             return `
-                <tr class="hover" data-hash="${torrent.info_hash}" data-name="${this.escapeHtml(torrent.name)}" data-category="${this.escapeHtml(torrent.category || '')}">
+                <tr class="hover prov-stripe" data-hash="${torrent.info_hash}"
+                    data-name="${this.escapeHtml(torrent.name)}"
+                    data-category="${this.escapeHtml(torrent.category || '')}"
+                    data-prov="${provSlug}"
+                    style="--prov-color:${provColor}">
                     <td>
                         <label class="cursor-pointer">
                             <input type="checkbox" class="checkbox checkbox-sm checkbox-primary torrent-select"
@@ -296,39 +425,41 @@ class TorrentDashboard {
                         </label>
                     </td>
                     <td>
-                        <div class="flex flex-col">
-                            <span class="font-medium">${this.escapeHtml(torrent.name)}</span>
-                            <span class="text-xs text-base-content/60 font-mono">${torrent.info_hash.substring(0, 8)}...</span>
+                        <div class="flex flex-col gap-0.5">
+                            <button type="button" class="font-medium text-left link link-hover" data-action="open-timeline">
+                                <i class="bi ${protoIcon} text-base-content/50 mr-1"></i>${this.escapeHtml(torrent.name)}
+                            </button>
+                            <span class="text-xs text-base-content/60 font-mono">${torrent.info_hash.substring(0, 8)}…</span>
                         </div>
+                    </td>
+                    <td>
+                        ${torrent.debrid ? `
+                            <span class="prov-chip" data-prov="${provSlug}" data-active="true"
+                                  style="--prov-color:${provColor}">
+                                <span class="prov-chip-dot"></span>${this.escapeHtml(torrent.debrid)}
+                            </span>` : '<span class="text-xs opacity-50">—</span>'}
                     </td>
                     <td>
                         <span class="badge badge-ghost">${this.formatSize(torrent.size)}</span>
                     </td>
                     <td>
-                        ${this.renderPhaseBadge(torrent.phase)}
-                    </td>
-                    <td>
                         ${this.renderProgressCell(torrent)}
                     </td>
                     <td>
-                        <span class="text-sm">${this.formatSpeed(torrent.speed ?? torrent.dlspeed)}</span>
+                        <span class="text-sm font-mono">${this.formatSpeed(torrent.speed ?? torrent.dlspeed)}</span>
                     </td>
                     <td>
                         ${torrent.category ? `<span class="badge badge-sm badge-outline">${this.escapeHtml(torrent.category)}</span>` : '-'}
                     </td>
                     <td>
-                        ${this.renderProtocolBadge(torrent.protocol)}
+                        ${this.renderStatusCell(torrent)}
                     </td>
                     <td>
-                        ${torrent.debrid ? `<span class="badge badge-sm badge-primary">${this.escapeHtml(torrent.debrid)}</span>` : '-'}
-                    </td>
-                    <td>
-                        <span class="text-sm">${torrent.num_seeds || 0}</span>
-                    </td>
-                    <td>
-                        ${this.renderStateBadge(torrent.state)}
-                    </td>
-                    <td>
+                        <button class="btn btn-ghost btn-xs"
+                                title="View History"
+                                data-action="open-timeline">
+                            <i class="bi bi-clock-history"></i>
+                        </button>
                         <button class="btn btn-ghost btn-xs text-error"
                                 title="Delete Torrent"
                                 onclick="window.dashboard.deleteTorrent('${torrent.info_hash}', '${this.escapeAttr(torrent.category || '')}', false);">
@@ -343,6 +474,31 @@ class TorrentDashboard {
                 </tr>
             `;
         }).join('');
+    }
+
+    renderStatusCell(torrent) {
+        const stateMap = {
+            'pausedUP': { class: 'badge-success', text: 'Completed', icon: 'bi-check-circle' },
+            'downloading': { class: 'badge-info', text: 'Downloading', icon: 'bi-arrow-down-circle' },
+            'error': { class: 'badge-error', text: 'Error', icon: 'bi-exclamation-triangle' },
+            'queued': { class: 'badge-ghost', text: 'Queued', icon: 'bi-hourglass-split' },
+            'paused': { class: 'badge-warning', text: 'Paused', icon: 'bi-pause-circle' }
+        };
+        const s = stateMap[torrent.state] || { class: 'badge-ghost', text: torrent.state || 'unknown', icon: 'bi-question' };
+        const phaseLabels = {
+            queued: 'Queued',
+            debrid_fetching: 'Provider',
+            downloading: 'Local pull',
+            importing: 'Importing',
+            complete: 'Complete'
+        };
+        const phase = torrent.phase ? (phaseLabels[torrent.phase] || torrent.phase) : '';
+        return `
+            <div class="tooltip tooltip-left" data-tip="${this.escapeAttr(torrent.last_error || (torrent.state || ''))}">
+                <span class="badge ${s.class} badge-sm gap-1"><i class="bi ${s.icon}"></i>${s.text}</span>
+                ${phase ? `<span class="text-[10px] block opacity-60 mt-0.5">${this.escapeHtml(phase)}</span>` : ''}
+            </div>
+        `;
     }
 
     renderPhaseBadge(phase) {
@@ -548,6 +704,7 @@ class TorrentDashboard {
     startAutoRefresh() {
         setInterval(() => {
             this.loadTorrents();
+            this.loadSummary();
         }, 10000); // Refresh every 10 seconds
     }
 
@@ -575,5 +732,160 @@ class TorrentDashboard {
     escapeAttr(text) {
         if (!text) return '';
         return text.replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+    }
+}
+
+// =====================================================================
+// Timeline drawer (history of an entry)
+// =====================================================================
+class TimelineDrawer {
+    constructor() {
+        this.drawer = document.getElementById('timelineDrawer');
+        this.backdrop = document.getElementById('timelineDrawerBackdrop');
+        this.body = document.getElementById('timelineDrawerBody');
+        this.entryName = document.getElementById('timelineEntryName');
+        this.entryMeta = document.getElementById('timelineEntryMeta');
+        this.copyBtn = document.getElementById('timelineCopyBtn');
+        this.closeBtn = document.getElementById('timelineCloseBtn');
+        this.currentHash = null;
+        this.events = [];
+        this.refreshTimer = null;
+        if (!this.drawer) return;
+
+        this.closeBtn?.addEventListener('click', () => this.close());
+        this.backdrop?.addEventListener('click', () => this.close());
+        this.copyBtn?.addEventListener('click', () => this.copyAsText());
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.drawer.classList.contains('open')) this.close();
+        });
+    }
+
+    async open({ hash, name, debrid }) {
+        if (!this.drawer) return;
+        this.currentHash = hash;
+        this.entryName.textContent = name || hash;
+        this.entryMeta.textContent = debrid ? `Provider: ${debrid}` : '—';
+        this.drawer.classList.add('open');
+        this.drawer.setAttribute('aria-hidden', 'false');
+        this.backdrop.classList.add('open');
+        this.body.innerHTML = `<div class="text-center py-8 opacity-60"><span class="loading loading-spinner loading-sm"></span></div>`;
+        await this.loadEvents();
+        this.refreshTimer = setInterval(() => this.loadEvents(), 5000);
+    }
+
+    close() {
+        if (!this.drawer) return;
+        this.drawer.classList.remove('open');
+        this.drawer.setAttribute('aria-hidden', 'true');
+        this.backdrop.classList.remove('open');
+        this.currentHash = null;
+        if (this.refreshTimer) {
+            clearInterval(this.refreshTimer);
+            this.refreshTimer = null;
+        }
+    }
+
+    async loadEvents() {
+        if (!this.currentHash) return;
+        try {
+            const res = await window.decypharrUtils.fetcher(`/api/queue/${this.currentHash}/timeline`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            this.events = Array.isArray(data) ? data : (data.timeline || []);
+            this.render();
+        } catch (err) {
+            this.body.innerHTML = `<div class="alert alert-error alert-sm text-xs">Failed to load timeline: ${window.decypharrUtils.escapeHtml(err.message)}</div>`;
+        }
+    }
+
+    render() {
+        if (!this.events.length) {
+            this.body.innerHTML = `<div class="opacity-60 text-sm text-center py-8">No events recorded yet for this entry.</div>`;
+            return;
+        }
+        const sorted = this.events.slice().sort((a, b) =>
+            new Date(a.at).getTime() - new Date(b.at).getTime());
+        const items = sorted.map(ev => this.renderItem(ev)).join('');
+        this.body.innerHTML = `<ol class="timeline-list">${items}</ol>`;
+    }
+
+    renderItem(ev) {
+        const at = new Date(ev.at);
+        const abs = at.toLocaleString();
+        const rel = this.relTime(at);
+        const meta = [];
+        if (ev.bytes) meta.push(window.decypharrUtils.formatBytes(ev.bytes));
+        if (ev.duration) meta.push(this.formatDuration(ev.duration));
+        if (ev.provider) meta.push(`provider: ${ev.provider}`);
+        const icon = this.iconFor(ev.kind);
+        return `
+            <li class="timeline-item" data-kind="${window.decypharrUtils.escapeHtml(ev.kind)}">
+                <div class="timeline-marker"><i class="bi ${icon}"></i></div>
+                <div class="timeline-kind">${this.labelFor(ev.kind)}</div>
+                <div class="timeline-time" title="${window.decypharrUtils.escapeHtml(abs)}">${rel} · ${window.decypharrUtils.escapeHtml(abs)}</div>
+                ${ev.message ? `<div class="timeline-message">${window.decypharrUtils.escapeHtml(ev.message)}</div>` : ''}
+                ${meta.length ? `<div class="timeline-meta">${window.decypharrUtils.escapeHtml(meta.join(' · '))}</div>` : ''}
+            </li>
+        `;
+    }
+
+    iconFor(kind) {
+        const map = {
+            added: 'bi-plus-circle',
+            queued: 'bi-hourglass-split',
+            debrid_submitted: 'bi-cloud-upload',
+            debrid_ready: 'bi-cloud-check',
+            local_download_start: 'bi-arrow-down-circle',
+            local_download_done: 'bi-check-circle',
+            symlinked: 'bi-link-45deg',
+            imported: 'bi-box-arrow-in-down',
+            error: 'bi-exclamation-triangle',
+            removed: 'bi-trash',
+        };
+        return map[kind] || 'bi-circle';
+    }
+
+    labelFor(kind) {
+        const map = {
+            added: 'Added',
+            queued: 'Queued',
+            debrid_submitted: 'Submitted to provider',
+            debrid_ready: 'Ready on provider',
+            local_download_start: 'Local download started',
+            local_download_done: 'Local download finished',
+            symlinked: 'Symlinked',
+            imported: 'Imported by Arr',
+            error: 'Error',
+            removed: 'Removed',
+        };
+        return map[kind] || kind;
+    }
+
+    relTime(date) {
+        const diff = Date.now() - date.getTime();
+        if (diff < 60_000) return `${Math.max(1, Math.round(diff / 1000))}s ago`;
+        if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
+        if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`;
+        return `${Math.round(diff / 86_400_000)}d ago`;
+    }
+
+    formatDuration(ns) {
+        const s = ns / 1e9;
+        if (s < 60) return `${s.toFixed(1)}s`;
+        if (s < 3600) return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+        return `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`;
+    }
+
+    async copyAsText() {
+        if (!this.events.length) return;
+        const text = this.events.slice()
+            .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+            .map(ev => {
+                const at = new Date(ev.at).toISOString();
+                const parts = [at, this.labelFor(ev.kind)];
+                if (ev.message) parts.push(ev.message);
+                return parts.join(' — ');
+            }).join('\n');
+        await window.decypharrUtils.copyToClipboard(text);
     }
 }

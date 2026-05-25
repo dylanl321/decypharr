@@ -714,6 +714,148 @@ class StatsPage {
                     }
                 }
         
+                function renderProviderGrid(stats) {
+                    const grid = document.getElementById('providers-grid');
+                    if (!grid) return;
+
+                    const debrids = (stats && stats.debrids) || [];
+                    const usenet = (stats && stats.usenet && stats.usenet.providers) || [];
+
+                    const setText = (id, val) => {
+                        const el = document.getElementById(id);
+                        if (el) el.textContent = val;
+                    };
+
+                    setText('prov-count', String(debrids.length + usenet.length));
+                    let totalLib = 0, totalLinks = 0, totalStreams = 0;
+                    debrids.forEach(d => {
+                        totalLib += (d.library && d.library.total) || 0;
+                        totalLinks += (d.library && d.library.active_links) || 0;
+                    });
+                    if (stats && stats.active_streams) totalStreams = stats.active_streams.length || 0;
+                    setText('prov-library', formatNumber(totalLib));
+                    setText('prov-active-links', formatNumber(totalLinks));
+                    setText('prov-streams', String(totalStreams));
+
+                    if (!debrids.length && !usenet.length) {
+                        grid.innerHTML = `<div class="provider-card opacity-60">
+                            <div class="kpi-label">No providers configured</div>
+                        </div>`;
+                        return;
+                    }
+
+                    if (!window.statsProvBuffers) window.statsProvBuffers = {};
+
+                    const cards = [];
+                    debrids.forEach(d => {
+                        const profile = d.profile || {};
+                        const library = d.library || {};
+                        const accounts = d.accounts || [];
+                        const name = profile.name || 'unknown';
+                        const slug = window.providerSlug(profile.type || name);
+                        const color = window.providerColor(profile.type || name);
+                        const chartId = `provChart-${slug}-${name.replace(/\W/g, '-')}`;
+
+                        if (!window.statsProvBuffers[chartId]) {
+                            window.statsProvBuffers[chartId] = window.pollingBuffer(`prov-thr-${chartId}`, 60);
+                        }
+                        const totalAcctTraffic = accounts.reduce((s, a) => s + (a.traffic_used || 0), 0);
+                        window.statsProvBuffers[chartId].push([Date.now(), totalAcctTraffic]);
+
+                        cards.push(`
+                            <div class="provider-card" data-prov="${slug}" style="--prov-color:${color}">
+                                <div class="provider-card-header">
+                                    <div class="provider-card-title">
+                                        <span class="prov-chip-dot"></span>
+                                        ${window.decypharrUtils.escapeHtml(name)}
+                                        <span class="badge badge-secondary badge-sm">Debrid</span>
+                                    </div>
+                                    <div class="text-xs text-right">
+                                        <div>${profile.username ? window.decypharrUtils.escapeHtml(profile.username) : ''}</div>
+                                        <div class="opacity-60">${profile.expiration ? 'Expires ' + new Date(profile.expiration).toLocaleDateString() : ''}</div>
+                                    </div>
+                                </div>
+                                <div class="provider-card-meta">
+                                    <div><div class="meta-label">Library</div><div class="meta-value">${formatNumber(library.total || 0)}</div></div>
+                                    <div><div class="meta-label">Active links</div><div class="meta-value">${formatNumber(library.active_links || 0)}</div></div>
+                                    <div><div class="meta-label">Bad</div><div class="meta-value text-error">${formatNumber(library.bad || 0)}</div></div>
+                                    <div><div class="meta-label">Accounts</div><div class="meta-value">${accounts.length}</div></div>
+                                </div>
+                                <div id="${chartId}" style="min-height:120px"></div>
+                                ${accounts.length ? `
+                                    <details class="text-xs">
+                                        <summary class="cursor-pointer opacity-70">Accounts (${accounts.length})</summary>
+                                        <ul class="mt-2 space-y-1">
+                                            ${accounts.map(a => `<li class="flex justify-between gap-2"><span class="truncate">${window.decypharrUtils.escapeHtml(a.username || a.email || a.id || 'account')}</span><span class="font-mono">${window.decypharrUtils.formatBytes(a.traffic_used || 0)}</span></li>`).join('')}
+                                        </ul>
+                                    </details>
+                                ` : ''}
+                            </div>
+                        `);
+                    });
+
+                    usenet.forEach(p => {
+                        const slug = window.providerSlug(p.host || p.name || 'usenet');
+                        const color = window.providerColor('usenet');
+                        const conn = p.connections || {};
+                        const used = conn.in_use || 0;
+                        const max = conn.max || 0;
+                        const utilization = max > 0 ? Math.round((used / max) * 100) : 0;
+                        cards.push(`
+                            <div class="provider-card" data-prov="${slug}" style="--prov-color:${color}">
+                                <div class="provider-card-header">
+                                    <div class="provider-card-title">
+                                        <span class="prov-chip-dot"></span>
+                                        ${window.decypharrUtils.escapeHtml(p.host || p.name || 'NNTP')}
+                                        <span class="badge badge-info badge-sm">NNTP</span>
+                                    </div>
+                                    <div class="text-xs text-right opacity-70">${used}/${max} conn</div>
+                                </div>
+                                <div class="provider-card-meta">
+                                    <div><div class="meta-label">Utilization</div><div class="meta-value">${utilization}%</div></div>
+                                    <div><div class="meta-label">SSL</div><div class="meta-value">${p.ssl ? 'Yes' : 'No'}</div></div>
+                                    <div><div class="meta-label">Port</div><div class="meta-value">${p.port || '—'}</div></div>
+                                    <div><div class="meta-label">Status</div><div class="meta-value">${p.connected ? 'Connected' : 'Idle'}</div></div>
+                                </div>
+                                <progress class="progress progress-info" value="${utilization}" max="100"></progress>
+                            </div>
+                        `);
+                    });
+                    grid.innerHTML = cards.join('');
+
+                    // Render mini charts after DOM update
+                    if (window.ApexCharts) {
+                        debrids.forEach(d => {
+                            const profile = d.profile || {};
+                            const name = profile.name || 'unknown';
+                            const slug = window.providerSlug(profile.type || name);
+                            const color = window.providerColor(profile.type || name);
+                            const chartId = `provChart-${slug}-${name.replace(/\W/g, '-')}`;
+                            const el = document.getElementById(chartId);
+                            if (!el) return;
+                            const buf = window.statsProvBuffers[chartId];
+                            const series = [{ name: 'Traffic', data: buf.values() }];
+                            const existing = el.__apex;
+                            if (existing) {
+                                existing.updateSeries(series);
+                            } else {
+                                const chart = new ApexCharts(el, {
+                                    chart: { type: 'area', height: 120, sparkline: { enabled: true }, animations: { enabled: false } },
+                                    series,
+                                    stroke: { curve: 'smooth', width: 2 },
+                                    colors: [color],
+                                    tooltip: {
+                                        x: { format: 'HH:mm:ss' },
+                                        y: { formatter: (v) => window.decypharrUtils.formatBytes(v) },
+                                    },
+                                });
+                                chart.render();
+                                el.__apex = chart;
+                            }
+                        });
+                    }
+                }
+
                 function updateStats(stats) {
                     // System overview
                     const sys = stats.system || {};
@@ -765,7 +907,8 @@ class StatsPage {
         
                     // Unified providers (debrid + usenet)
                     updateProviders(stats.debrids, stats.usenet);
-        
+                    renderProviderGrid(stats);
+
                     // Active streams
                     updateActiveStreams(stats.active_streams);
                 }

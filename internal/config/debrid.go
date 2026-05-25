@@ -34,6 +34,12 @@ type Debrid struct {
 	// Post-completion cleanup
 	RemoveOnComplete *bool `json:"remove_on_complete,omitempty"` // delete from this provider after local completion to free slots / stop seeding
 
+	// Local download throttling. Empty/zero disables throttling for this
+	// provider. Values support standard suffixes parsed by ParseBandwidth
+	// ("10MB/s", "1.5MiB/s", "500KB/s", or raw bytes/sec). The effective
+	// rate is the more restrictive of this and Config.Download.BandwidthLimit.
+	BandwidthLimit string `json:"bandwidth_limit,omitempty"`
+
 	// Folder
 	Folder        string `json:"folder,omitempty"`          // Deprecated. Use Mount MountPath instead.
 	FolderNaming  string `json:"folder_naming,omitempty"`   // Deprecated. Use global setting instead.

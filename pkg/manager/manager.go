@@ -87,6 +87,9 @@ type Manager struct {
 
 	// Notifications service
 	Notifications *notifications.Service
+
+	// bandwidth shaping for local downloads (global + per-provider).
+	bandwidth *bandwidthController
 }
 
 // New creates a new Manager instance
@@ -153,6 +156,7 @@ func New() *Manager {
 		debridSpeedTestResults: xsync.NewMap[string, debridTypes.SpeedTestResult](),
 		activeStreams:          xsync.NewMap[string, *ActiveStream](),
 		processingEntries:      xsync.NewMap[string, struct{}](),
+		bandwidth:              newBandwidthController(cfg),
 	}
 
 	instance.init()
@@ -179,6 +183,9 @@ func (m *Manager) init() {
 	}
 
 	m.config = cfg
+	if m.bandwidth != nil {
+		m.bandwidth.Reload(cfg)
+	}
 
 	// Recreate queue with new config
 	m.queue = newQueue(m.ctx, m.storage, 1000, cfg.RemoveStalledAfter)

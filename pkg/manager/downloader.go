@@ -249,6 +249,9 @@ func (d *Downloader) processSymlink(entry *storage.Entry, mountPath string) erro
 		return err
 	}
 
+	if len(filePaths) > 0 {
+		entry.AppendEvent(storage.TimelineSymlinked, entry.ActiveProvider, fmt.Sprintf("%d files", len(filePaths)))
+	}
 	entry.IsDownloading = true
 	_ = d.manager.queue.Update(entry)
 
@@ -543,6 +546,8 @@ func (d *Downloader) processTorrentDownload(entry *storage.Entry) error {
 	}
 	entry.Phase = storage.DownloadPhaseDownloading
 	entry.Progress = overallProgress(entry.DebridProgress, entry.LocalProgress, entry.Action)
+	entry.AppendEvent(storage.TimelineDebridReady, entry.ActiveProvider, "")
+	entry.AppendEvent(storage.TimelineLocalDownloadStart, entry.ActiveProvider, fmt.Sprintf("%d files", len(files)))
 
 	var progressMu sync.Mutex
 	progressCallback := func(downloaded int64, speed int64) {
@@ -583,12 +588,14 @@ func (d *Downloader) processTorrentDownload(entry *storage.Entry) error {
 	if d.maxDownloads > 0 {
 		p = p.WithMaxGoroutines(d.maxDownloads)
 	}
+	provider := entry.ActiveProvider
 	for _, task := range tasks {
 		p.Go(func() error {
 			if err := d.localDownloader(
 				task.link,
 				filepath.Join(downloadedFolder, task.file.Name),
 				task.file.ByteRange,
+				provider,
 				progressCallback,
 			); err != nil {
 				d.logger.Error().Msgf("Failed to download %s: %v", task.file.Name, err)
@@ -762,7 +769,9 @@ func (d *Downloader) detectMultiSeason(torrent *storage.Entry) (bool, []SeasonIn
 }
 
 // localDownloader downloads a file with grab so interrupted local downloads can resume cleanly.
-func (d *Downloader) localDownloader(downloadURL, filename string, byterange *[2]int64, progressCallback func(int64, int64)) error {
+// `provider` should be the debrid provider name so per-provider bandwidth caps
+// can be applied; pass "" when no provider is associated.
+func (d *Downloader) localDownloader(downloadURL, filename string, byterange *[2]int64, provider string, progressCallback func(int64, int64)) error {
 	startTime := time.Now()
 	requestedRange := "full"
 	req, err := grab.NewRequest(filename, downloadURL)
@@ -783,7 +792,17 @@ func (d *Downloader) localDownloader(downloadURL, filename string, byterange *[2
 
 	client := grab.NewClient()
 	client.BufferSize = 1 << 20
-	client.HTTPClient = d.manager.streamClient
+	// When bandwidth shaping is configured, wrap the shared transport with a
+	// throttled tripper bound to this provider so reads block until tokens are
+	// available. Cloning the http.Client (not the transport) keeps connection
+	// pooling intact across all in-flight downloads.
+	if d.manager.bandwidth != nil && d.manager.streamClient != nil {
+		clientCopy := *d.manager.streamClient
+		clientCopy.Transport = d.manager.bandwidth.transportFor(d.manager.streamClient.Transport, provider)
+		client.HTTPClient = &clientCopy
+	} else {
+		client.HTTPClient = d.manager.streamClient
+	}
 
 	resp := client.Do(req)
 	if resp == nil {

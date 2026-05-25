@@ -25,53 +25,80 @@
             } else {
                 document.documentElement.setAttribute('data-theme', 'light');
             }
+            const savedDensity = localStorage.getItem('density');
+            if (savedDensity) {
+                document.documentElement.setAttribute('data-density', savedDensity);
+            }
+            const savedSidebar = localStorage.getItem('sidebar-collapsed');
+            if (savedSidebar === '1') {
+                document.documentElement.classList.add('sidebar-collapsed');
+            }
         })();
         window.urlBase = "{{.URLBase}}";
     </script>
 </head>
-<body class="min-h-screen bg-base-200 flex flex-col">
-<div class="toast-container fixed bottom-4 right-4 z-50 space-y-2">
-</div>
+<body class="min-h-screen bg-base-200 app-shell">
+<div class="toast-container fixed bottom-4 right-4 z-50 space-y-2"></div>
 
-<header class="navbar bg-base-100 shadow-lg sticky top-0 z-40 backdrop-blur-sm">
-    <div class="navbar-start">
-        {{ if .ShowNav }}
-        <div class="dropdown">
-            <div tabindex="0" role="button" class="btn btn-ghost lg:hidden">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16"/>
-                </svg>
-            </div>
-            <ul class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow-lg bg-base-100 rounded-box w-52 border border-base-300">
-                {{ template "partials/nav_items" dict "Items" .NavItems "ActivePage" .Page "Compact" true }}
-                {{ template "partials/nav_items" dict "Items" .UtilityNav "ActivePage" .Page "Compact" true }}
-            </ul>
-        </div>
-        {{ end }}
-        <a class="btn btn-ghost text-xl font-bold text-primary group" href="{{.URLBase}}">
-            <img src="{{.URLBase}}images/logo.png" alt="Decypharr Logo" class="w-8 h-8 inline-block mr-2">
-            <span class="hidden sm:inline bg-clip-text">Decypharr</span>
+{{ if .ShowNav }}
+<aside class="app-sidebar" id="appSidebar" aria-label="Primary navigation">
+    <div class="app-sidebar-header">
+        <a href="{{.URLBase}}" class="brand">
+            <img src="{{.URLBase}}images/logo.png" alt="Decypharr" class="brand-logo">
+            <span class="brand-text">Decypharr</span>
         </a>
+        <button type="button" class="btn btn-ghost btn-sm btn-square sidebar-collapse-btn"
+                id="sidebarCollapseBtn" title="Collapse sidebar" aria-label="Collapse sidebar">
+            <i class="bi bi-layout-sidebar-inset"></i>
+        </button>
     </div>
 
-    {{ if .ShowNav }}
-    <div class="navbar-center hidden lg:flex">
-        <ul class="menu menu-horizontal px-1 gap-1">
-            {{ template "partials/nav_items" dict "Items" .NavItems "ActivePage" .Page "IconOnly" false }}
-            {{ template "partials/nav_items" dict "Items" .UtilityNav "ActivePage" .Page "IconOnly" false }}
+    <nav class="app-sidebar-nav" aria-label="Primary">
+        <ul class="menu menu-vertical w-full p-2 gap-1">
+            {{ template "partials/nav_items" dict "Items" .NavItems "ActivePage" .Page }}
         </ul>
-    </div>
-    {{ end }}
+        <div class="app-sidebar-divider"></div>
+        <ul class="menu menu-vertical w-full p-2 gap-1">
+            {{ template "partials/nav_items" dict "Items" .UtilityNav "ActivePage" .Page }}
+        </ul>
+    </nav>
 
-    <div class="navbar-end">
-        <div class="flex items-center gap-3">
-            <div class="tooltip tooltip-left">
-                <label class="swap swap-rotate btn btn-ghost btn-circle hover:bg-base-300 transition-colors">
-                    <input type="checkbox" id="themeToggle" class="theme-controller"/>
-                    <i class="swap-off bi bi-sun text-lg text-warning"></i>
-                    <i class="swap-on bi bi-moon-stars text-lg text-info"></i>
-                </label>
+    <div class="app-sidebar-footer">
+        <div class="provider-strip" id="providerStrip" aria-label="Configured providers">
+            <div class="provider-strip-title">Providers</div>
+            <div class="provider-strip-list" id="providerStripList">
+                <span class="provider-strip-empty">Loading…</span>
             </div>
+        </div>
+    </div>
+</aside>
+{{ end }}
+
+<div class="app-main">
+    {{ if .ShowNav }}
+    <header class="app-topbar">
+        <div class="app-topbar-left">
+            <button type="button" class="btn btn-ghost btn-sm btn-square sidebar-toggle"
+                    id="sidebarToggleBtn" aria-label="Toggle navigation">
+                <i class="bi bi-list text-xl"></i>
+            </button>
+            <div class="app-breadcrumbs">
+                <i class="bi {{.PageIcon}} text-primary"></i>
+                <span class="font-semibold">{{.Title}}</span>
+            </div>
+        </div>
+
+        <div class="app-topbar-right">
+            <div class="app-throughput hidden sm:flex" id="appThroughput" title="Live download throughput">
+                <i class="bi bi-arrow-down-circle text-info"></i>
+                <span id="appThroughputValue">—</span>
+            </div>
+
+            <label class="swap swap-rotate btn btn-ghost btn-circle btn-sm">
+                <input type="checkbox" id="themeToggle" class="theme-controller"/>
+                <i class="swap-off bi bi-sun text-lg text-warning"></i>
+                <i class="swap-on bi bi-moon-stars text-lg text-info"></i>
+            </label>
 
             {{ if .ShowLogout }}
             <div class="dropdown dropdown-end">
@@ -86,73 +113,79 @@
             {{ end }}
 
             <div class="tooltip tooltip-left" data-tip="Current Version">
-                <div class="badge badge-primary font-mono text-xs hover:badge-primary-focus transition-colors cursor-pointer"
-                     id="version-badge">
+                <div class="badge badge-primary font-mono text-xs cursor-pointer" id="version-badge">
                     Loading...
                 </div>
             </div>
         </div>
-    </div>
-</header>
-
-<main class="flex-1 container mx-auto px-4 py-6">
-    {{ if eq .Page "index" }}
-    {{ template "index" . }}
-    {{ else if eq .Page "browse" }}
-    {{ template "browse" . }}
-    {{ else if eq .Page "download" }}
-    {{ template "download" . }}
-    {{ else if eq .Page "repair" }}
-    {{ template "repair" . }}
-    {{ else if eq .Page "stats" }}
-    {{ template "stats" . }}
-    {{ else if eq .Page "health" }}
-    {{ template "health" . }}
-    {{ else if eq .Page "config" }}
-    {{ template "config" . }}
-    {{ else if eq .Page "login" }}
-    {{ template "login" . }}
-    {{ else if eq .Page "register" }}
-    {{ template "register" . }}
-    {{ else if eq .Page "setup" }}
-    {{ template "setup" . }}
-    {{ else }}
-    <div class="hero min-h-96">
-        <div class="hero-content text-center">
-            <div class="max-w-md">
-                <h1 class="text-5xl font-bold text-error">404</h1>
-                <p class="py-6">Page not found. The page you're looking for doesn't exist.</p>
-                <a href="{{.URLBase}}" class="btn btn-primary">Go Home</a>
-            </div>
-        </div>
-    </div>
+    </header>
     {{ end }}
-</main>
 
-<footer class="footer footer-center p-6 bg-base-300 text-base-content border-t border-base-200 md:footer-horizontal">
-    <aside class="grid-flow-col gap-4">
-        <a href="https://github.com/sirrobot01/decypharr" target="_blank"
-           class="link link-hover flex items-center gap-2 hover:text-primary transition-colors">
-            <i class="bi bi-github text-lg"></i>
-            <span>GitHub</span>
-        </a>
-        <a href="https://docs.decypharr.com/" target="_blank" id="docs-link"
-           class="link link-hover flex items-center gap-2 hover:text-primary transition-colors">
-            <i class="bi bi-book text-lg"></i>
-            <span>Documentation</span>
-        </a>
-        <a href="https://sponsor.decypharr.com" target="_blank"
-           class="link link-hover flex items-center gap-2 hover:text-error transition-colors">
-            <i class="bi bi-heart-fill text-error text-lg"></i>
-            <span>Sponsor</span>
-        </a>
-    </aside>
-</footer>
+    <main class="app-content {{ if not .ShowNav }}app-content-bare{{ end }}">
+        <div class="app-content-inner">
+            {{ if eq .Page "overview" }}
+            {{ template "overview" . }}
+            {{ else if eq .Page "index" }}
+            {{ template "index" . }}
+            {{ else if eq .Page "browse" }}
+            {{ template "browse" . }}
+            {{ else if eq .Page "download" }}
+            {{ template "download" . }}
+            {{ else if eq .Page "repair" }}
+            {{ template "repair" . }}
+            {{ else if eq .Page "stats" }}
+            {{ template "stats" . }}
+            {{ else if eq .Page "health" }}
+            {{ template "health" . }}
+            {{ else if eq .Page "config" }}
+            {{ template "config" . }}
+            {{ else if eq .Page "login" }}
+            {{ template "login" . }}
+            {{ else if eq .Page "register" }}
+            {{ template "register" . }}
+            {{ else if eq .Page "setup" }}
+            {{ template "setup" . }}
+            {{ else }}
+            <div class="hero min-h-96">
+                <div class="hero-content text-center">
+                    <div class="max-w-md">
+                        <h1 class="text-5xl font-bold text-error">404</h1>
+                        <p class="py-6">Page not found.</p>
+                        <a href="{{.URLBase}}" class="btn btn-primary">Go Home</a>
+                    </div>
+                </div>
+            </div>
+            {{ end }}
+        </div>
+
+        <footer class="app-footer">
+            <a href="https://github.com/sirrobot01/decypharr" target="_blank" class="link link-hover">
+                <i class="bi bi-github"></i> GitHub
+            </a>
+            <a href="https://docs.decypharr.com/" target="_blank" id="docs-link" class="link link-hover">
+                <i class="bi bi-book"></i> Docs
+            </a>
+            <a href="https://sponsor.decypharr.com" target="_blank" class="link link-hover">
+                <i class="bi bi-heart-fill text-error"></i> Sponsor
+            </a>
+        </footer>
+    </main>
+</div>
+
+{{ if .ShowNav }}
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+{{ end }}
 
 <script src="{{.URLBase}}assets/js/jquery-3.7.1.min.js"></script>
 <script src="{{.URLBase}}assets/js/common.js"></script>
 
-{{ if eq .Page "index" }}
+{{ if or (eq .Page "overview") (eq .Page "index") (eq .Page "stats") }}
+<script src="{{.URLBase}}assets/js/apexcharts.min.js"></script>
+{{ end }}
+
+{{ if eq .Page "overview" }}
+<script src="{{.URLBase}}assets/js/overview.js"></script>
+{{ else if eq .Page "index" }}
 <script src="{{.URLBase}}assets/js/dashboard.js"></script>
 {{ else if eq .Page "browse" }}
 <script src="{{.URLBase}}assets/js/browse.js"></script>

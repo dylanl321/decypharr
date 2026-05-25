@@ -183,6 +183,10 @@ type Config struct {
 	// PreferCachedProvider runs parallel cache checks before submit (nil/absent = enabled).
 	PreferCachedProvider *bool `json:"prefer_cached_provider,omitempty"`
 
+	// Download holds settings that govern how local downloads from debrid
+	// providers are executed (e.g. global bandwidth caps).
+	Download DownloadConfig `json:"download,omitzero"`
+
 	// CategoryPaths maps Arr/category names to absolute download paths (case-insensitive keys).
 	CategoryPaths map[string]string `json:"category_paths,omitempty"`
 

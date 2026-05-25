@@ -17,7 +17,8 @@ type NavItem struct {
 
 func primaryNavItems(urlBase string) []NavItem {
 	return []NavItem{
-		{Page: "index", Label: "Dashboard", Href: urlBase, Icon: "bi-grid-3x3-gap"},
+		{Page: "overview", Label: "Overview", Href: urlBase + "overview", Icon: "bi-speedometer2"},
+		{Page: "index", Label: "Queue", Href: urlBase, Icon: "bi-list-ul"},
 		{Page: "download", Label: "Download", Href: urlBase + "download", Icon: "bi-cloud-download"},
 		{Page: "browse", Label: "Browse", Href: urlBase + "browse", Icon: "bi-folder2-open"},
 		{Page: "repair", Label: "Repair", Href: urlBase + "repair", Icon: "bi-wrench-adjustable"},
@@ -30,6 +31,34 @@ func primaryNavItems(urlBase string) []NavItem {
 func utilityNavItems(urlBase string) []NavItem {
 	return []NavItem{
 		{Label: "Logs", Href: urlBase + "debug/logs", Icon: "bi-journal-text", External: true},
+	}
+}
+
+// pageIconFor returns a Bootstrap Icon class used in the topbar breadcrumb for the given page.
+func pageIconFor(page string) string {
+	switch page {
+	case "overview":
+		return "bi-speedometer2"
+	case "index":
+		return "bi-list-ul"
+	case "download":
+		return "bi-cloud-download"
+	case "browse":
+		return "bi-folder2-open"
+	case "repair":
+		return "bi-wrench-adjustable"
+	case "health":
+		return "bi-heart-pulse"
+	case "stats":
+		return "bi-graph-up"
+	case "config":
+		return "bi-gear"
+	case "login", "register":
+		return "bi-shield-lock"
+	case "setup":
+		return "bi-magic"
+	default:
+		return "bi-grid-3x3-gap"
 	}
 }
 
@@ -75,6 +104,7 @@ func (s *Server) layoutData(r *http.Request, page, title string, extra map[strin
 	data := map[string]interface{}{
 		"URLBase":      cfg.URLBase,
 		"Page":         page,
+		"PageIcon":     pageIconFor(page),
 		"Title":        title,
 		"NavItems":     primaryNavItems(cfg.URLBase),
 		"UtilityNav":   utilityNavItems(cfg.URLBase),

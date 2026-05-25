@@ -142,11 +142,24 @@ func (q *Queue) ReQueue(importReq *ImportRequest) error {
 }
 
 func (q *Queue) Add(torrent *storage.Entry) error {
-	return q.storage.AddQueue(torrent)
+	if err := q.storage.AddQueue(torrent); err != nil {
+		return err
+	}
+	q.persistTimeline(torrent)
+	return nil
 }
 
 func (q *Queue) GetTorrent(infohash string) (*storage.Entry, error) {
-	return q.storage.GetQueued(infohash)
+	t, err := q.storage.GetQueued(infohash)
+	if err != nil {
+		return nil, err
+	}
+	if t != nil {
+		if events, _ := q.storage.GetTimeline(infohash); events != nil {
+			t.Timeline = events
+		}
+	}
+	return t, nil
 }
 
 func (q *Queue) deleteEntryFiles(entry *storage.Entry) {
@@ -170,7 +183,9 @@ func (q *Queue) wrapCleanupWithFileDelete(cleanup func(t *storage.Entry) error) 
 }
 
 func (q *Queue) Delete(infohash string, cleanup func(t *storage.Entry) error) error {
-	return q.storage.DeleteQueued(infohash, q.wrapCleanupWithFileDelete(cleanup))
+	err := q.storage.DeleteQueued(infohash, q.wrapCleanupWithFileDelete(cleanup))
+	_ = q.storage.DeleteTimeline(infohash)
+	return err
 }
 
 func (q *Queue) DeleteWhere(category string, protocol config.Protocol, state storage.TorrentState, hashes []string, cleanup func(t *storage.Entry) error) error {
@@ -197,7 +212,24 @@ func (q *Queue) DeleteStalled() error {
 
 func (q *Queue) Update(torrent *storage.Entry) error {
 	// Update the state here
-	return q.storage.UpdateQueue(torrent)
+	if err := q.storage.UpdateQueue(torrent); err != nil {
+		return err
+	}
+	q.persistTimeline(torrent)
+	return nil
+}
+
+// persistTimeline writes the in-memory Entry.Timeline to the sidecar bucket
+// and reloads it back so callers always see the canonical state. Failures are
+// logged but not returned because the timeline is a best-effort observability
+// artifact.
+func (q *Queue) persistTimeline(t *storage.Entry) {
+	if t == nil || len(t.Timeline) == 0 {
+		return
+	}
+	if err := q.storage.PutTimeline(t.InfoHash, t.Timeline); err != nil {
+		q.logger.Debug().Err(err).Str("hash", t.InfoHash).Msg("Failed to persist timeline")
+	}
 }
 
 func (q *Queue) ListFilterFunc(category string, protocol config.Protocol, state storage.TorrentState, hashes []string) func(*storage.Entry) bool {

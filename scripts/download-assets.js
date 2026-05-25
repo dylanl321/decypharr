@@ -73,6 +73,10 @@ const downloads = [
     {
         url: 'https://code.jquery.com/jquery-3.7.1.min.js',
         path: path.join(buildDir.js, 'jquery-3.7.1.min.js')
+    },
+    {
+        url: 'https://cdn.jsdelivr.net/npm/apexcharts@3.54.1/dist/apexcharts.min.js',
+        path: path.join(buildDir.js, 'apexcharts.min.js')
     }
 ];
 

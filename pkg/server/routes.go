@@ -37,6 +37,7 @@ func (s *Server) WebRoutes() http.Handler {
 		r.Use(s.authMiddleware)
 		// Web pages
 		r.Get("/", s.IndexHandler)
+		r.Get("/overview", s.OverviewHandler)
 		r.Get("/browse", s.BrowseHandler)
 		r.Get("/download", s.DownloadHandler)
 		r.Get("/repair", s.RepairHandler)
@@ -52,6 +53,8 @@ func (s *Server) WebRoutes() http.Handler {
 			r.Get("/stats", s.stats.Handler())
 			r.Get("/debrid/status", s.handleDebridStatus)
 			r.Get("/queue/summary", s.handleQueueSummary)
+			r.Get("/bandwidth", s.handleBandwidth)
+			r.Put("/bandwidth", s.handleUpdateBandwidth)
 			r.Get("/version", s.handleGetAPIVersion)
 
 			// Arr management (full CRUD)
@@ -65,6 +68,7 @@ func (s *Server) WebRoutes() http.Handler {
 
 			// Queue management (CRUD + Actions)
 			r.Get("/queue/{hash}", s.handleGetQueueItem)
+			r.Get("/queue/{hash}/timeline", s.handleGetQueueTimeline)
 			r.Post("/queue/{hash}/retry", s.handleRetryQueueItem)
 			r.Post("/queue/{hash}/pause", s.handlePauseQueueItem)
 			r.Post("/queue/{hash}/resume", s.handleResumeQueueItem)

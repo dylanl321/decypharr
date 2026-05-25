@@ -6,6 +6,29 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap**, 
 
 ### Added
 
+#### UI redesign: app shell, Overview, and provider-first stats
+
+- **App shell:** New collapsible left sidebar + compact topbar in `templates/layout.html` with provider status pills and a global theme toggle. Active-route highlighting and density-friendly typography land in `assets/styles.css`.
+- **Overview page:** New `/overview` route, handler, template, and `assets/js/overview.js` showing KPIs (active downloads, throughput, library size, error rate), per-provider cards with trend sparklines, an active-downloads strip, and a live bandwidth-cap panel sourced from `/api/bandwidth`.
+- **Queue redesign:** `templates/index.html` and `assets/js/dashboard.js` now expose provider filter chips, per-row provider color stripes, summary state pills, a cozy/compact density toggle, and a context-menu entry that opens a vertical history timeline drawer for any entry.
+- **Stats redesign:** `templates/stats.html` reorders tabs to make Providers the default and adds a KPI grid + per-provider cards with ApexCharts sparklines fed by the existing `/api/stats` polling buffer.
+- **Charting:** ApexCharts is now vendored locally via `download-assets.js` and conditionally loaded on Overview, Stats, and Queue pages. A shared `providerColor()` helper plus CSS palette tokens keep provider colors consistent across pages.
+
+#### History timeline per queue entry
+
+- **Model:** `storage.Entry` gains an in-memory `Timeline []TimelineEvent` log with kinds `added`, `queued`, `debrid_submitted`, `debrid_ready`, `local_download_start`, `local_download_done`, `symlinked`, `imported`, `error`, and `removed`. Events carry `provider`, `message`, `bytes`, and `duration` fields.
+- **Persistence:** Timeline entries live in a new `timeline` sidecar bucket on the hybrid store (JSON-encoded, keyed by infohash) so the existing protobuf `Entry` record is unchanged. `queue.{Add,Update,Delete}` and `GetTorrent` transparently round-trip the timeline.
+- **API/UI:** New `GET /api/queue/{hash}/timeline` endpoint plus a vertical timeline drawer in the Queue UI that auto-refreshes, falls back to a synthesized history for older entries, and supports "copy as text".
+
+#### Local download bandwidth throttling
+
+- **Config:** New global `download.bandwidth_limit` and per-debrid `bandwidth_limit` fields. A shared `config.ParseBandwidth` helper accepts `"10MB/s"`, `"1.5MiB/s"`, `"500KB/s"`, or raw bytes/sec.
+- **Enforcement:** `pkg/manager/bandwidth.go` introduces a `bandwidthController` with global + per-provider `rate.Limiter`s. `localDownloader` swaps in a custom `http.RoundTripper` that wraps response bodies with `throttledBody`, so `grab` downloads honor the more restrictive of the two caps without breaking connection pooling.
+- **Settings UI:** Config page now has a "Global Bandwidth Cap" input under download settings and a "Bandwidth Limit" input on each debrid card; values round-trip through `/api/config` and a dedicated `GET/PUT /api/bandwidth` endpoint.
+- **Observability:** `BandwidthSnapshot` exposes effective caps and total bytes shaped, surfaced on the Overview bandwidth panel.
+
+### Added
+
 #### Multi-provider routing and slot limits
 
 - **Per-debrid protocol toggles:** `allow_torrents` and `allow_nzbs` opt each debrid in or out of torrent and NZB submissions. Defaults preserve current behavior — `allow_torrents` is `true` for all providers, `allow_nzbs` is `true` for Torbox and `false` for the others.

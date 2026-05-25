@@ -104,6 +104,71 @@ type Entry struct {
 	LastError     string     `msgpack:"last_error,omitempty" json:"last_error,omitempty"`           // Last error message
 	ErrorCount    int        `msgpack:"error_count,omitempty" json:"error_count,omitempty"`         // Number of errors
 	LastErrorTime *time.Time `msgpack:"last_error_time,omitempty" json:"last_error_time,omitempty"` // Last error time
+
+	// Timeline is an append-only event log surfaced to the UI. It is persisted
+	// in a sidecar store (see Storage.{Get,Put}Timeline) rather than in the
+	// proto Entry record so the existing on-disk format does not change.
+	Timeline []TimelineEvent `msgpack:"-" json:"timeline,omitempty"`
+}
+
+// TimelineEventKind enumerates the high-level lifecycle events for an Entry.
+type TimelineEventKind string
+
+const (
+	TimelineAdded              TimelineEventKind = "added"
+	TimelineQueued             TimelineEventKind = "queued"
+	TimelineDebridSubmitted    TimelineEventKind = "debrid_submitted"
+	TimelineDebridReady        TimelineEventKind = "debrid_ready"
+	TimelineLocalDownloadStart TimelineEventKind = "local_download_start"
+	TimelineLocalDownloadDone  TimelineEventKind = "local_download_done"
+	TimelineSymlinked          TimelineEventKind = "symlinked"
+	TimelineImported           TimelineEventKind = "imported"
+	TimelineError              TimelineEventKind = "error"
+	TimelineRemoved            TimelineEventKind = "removed"
+)
+
+// MaxTimelineEvents bounds the number of events retained per Entry. Older
+// events rotate out FIFO when the cap is exceeded.
+const MaxTimelineEvents = 64
+
+// TimelineEvent represents a single lifecycle event for an Entry.
+type TimelineEvent struct {
+	At       time.Time         `msgpack:"at" json:"at"`
+	Kind     TimelineEventKind `msgpack:"kind" json:"kind"`
+	Provider string            `msgpack:"provider,omitempty" json:"provider,omitempty"`
+	Message  string            `msgpack:"message,omitempty" json:"message,omitempty"`
+	Bytes    int64             `msgpack:"bytes,omitempty" json:"bytes,omitempty"`
+	Duration int64             `msgpack:"duration,omitempty" json:"duration,omitempty"` // nanoseconds
+}
+
+// AppendEvent appends a timeline event with optional provider/message and
+// bounds the slice. It deduplicates identical consecutive events emitted
+// within 1s to avoid noise from tight refresh loops.
+func (e *Entry) AppendEvent(kind TimelineEventKind, provider, message string) {
+	now := time.Now()
+	if n := len(e.Timeline); n > 0 {
+		last := e.Timeline[n-1]
+		if last.Kind == kind && last.Provider == provider && last.Message == message &&
+			now.Sub(last.At) < time.Second {
+			return
+		}
+	}
+	e.Timeline = append(e.Timeline, TimelineEvent{
+		At: now, Kind: kind, Provider: provider, Message: message,
+	})
+	if len(e.Timeline) > MaxTimelineEvents {
+		e.Timeline = e.Timeline[len(e.Timeline)-MaxTimelineEvents:]
+	}
+}
+
+// AppendEventWithSize records an event that includes a transferred byte count
+// and elapsed wall-clock duration (e.g. local_download_done).
+func (e *Entry) AppendEventWithSize(kind TimelineEventKind, provider, message string, bytes int64, dur time.Duration) {
+	e.AppendEvent(kind, provider, message)
+	if n := len(e.Timeline); n > 0 {
+		e.Timeline[n-1].Bytes = bytes
+		e.Timeline[n-1].Duration = int64(dur)
+	}
 }
 
 func (e *Entry) IsTorrent() bool {
@@ -427,6 +492,7 @@ func (e *Entry) MarkAsCompleted(contentPath string) {
 	now := time.Now()
 	e.CompletedAt = &now
 	e.UpdatedAt = now
+	e.AppendEvent(TimelineLocalDownloadDone, e.ActiveProvider, "Marked complete")
 }
 
 // MarkAsError marks the torrent as errored
@@ -439,6 +505,7 @@ func (e *Entry) MarkAsError(err error) {
 	now := time.Now()
 	e.LastErrorTime = &now
 	e.UpdatedAt = now
+	e.AppendEvent(TimelineError, e.ActiveProvider, err.Error())
 }
 
 func (e *Entry) GetFile(filename string) (*File, error) {

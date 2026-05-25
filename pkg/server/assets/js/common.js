@@ -715,6 +715,167 @@ window.decypharrUtils = new DecypharrUtils();
 window.fetcher = (endpoint, options = {}) => window.decypharrUtils.fetcher(endpoint, options);
 window.createToast = (message, type, duration) => window.decypharrUtils.createToast(message, type, duration);
 
+// =====================================================================
+// Provider color + slug helpers
+// =====================================================================
+
+const PROVIDER_COLORS = {
+    realdebrid: '#4f8cff',
+    torbox: '#8b5cf6',
+    alldebrid: '#f59e0b',
+    debridlink: '#10b981',
+    premiumize: '#ef4444',
+    usenet: '#06b6d4',
+};
+
+function providerSlug(name) {
+    if (!name) return 'unknown';
+    return String(name).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function providerColor(name) {
+    const slug = providerSlug(name);
+    if (PROVIDER_COLORS[slug]) return PROVIDER_COLORS[slug];
+    let hash = 0;
+    for (let i = 0; i < slug.length; i++) hash = (hash * 31 + slug.charCodeAt(i)) >>> 0;
+    const hue = hash % 360;
+    return `hsl(${hue}, 65%, 55%)`;
+}
+
+window.providerColor = providerColor;
+window.providerSlug = providerSlug;
+
+// =====================================================================
+// Density preference
+// =====================================================================
+
+window.setDensity = function (density) {
+    const d = density === 'compact' ? 'compact' : 'cozy';
+    document.documentElement.setAttribute('data-density', d);
+    localStorage.setItem('density', d);
+};
+
+window.getDensity = function () {
+    return localStorage.getItem('density') || 'cozy';
+};
+
+// =====================================================================
+// Rolling polling buffer (for sparklines / live charts)
+// =====================================================================
+
+window.pollingBuffer = function (key, max = 60) {
+    const storeKey = `pb:${key}`;
+    let series = [];
+    try {
+        const raw = sessionStorage.getItem(storeKey);
+        if (raw) series = JSON.parse(raw) || [];
+    } catch (e) { series = []; }
+
+    return {
+        push(point) {
+            series.push(point);
+            while (series.length > max) series.shift();
+            try { sessionStorage.setItem(storeKey, JSON.stringify(series)); } catch (e) {}
+        },
+        values() { return series.slice(); },
+        last() { return series.length ? series[series.length - 1] : null; },
+        clear() { series = []; try { sessionStorage.removeItem(storeKey); } catch (e) {} }
+    };
+};
+
+// =====================================================================
+// App shell wiring (sidebar toggle/collapse, provider strip, throughput)
+// =====================================================================
+
+(function () {
+    function setupSidebar() {
+        const sidebar = document.getElementById('appSidebar');
+        if (!sidebar) return;
+        const collapseBtn = document.getElementById('sidebarCollapseBtn');
+        const toggleBtn = document.getElementById('sidebarToggleBtn');
+        const backdrop = document.getElementById('sidebarBackdrop');
+
+        if (collapseBtn) {
+            collapseBtn.addEventListener('click', () => {
+                document.documentElement.classList.toggle('sidebar-collapsed');
+                localStorage.setItem('sidebar-collapsed',
+                    document.documentElement.classList.contains('sidebar-collapsed') ? '1' : '0');
+            });
+        }
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                document.body.classList.toggle('sidebar-open');
+            });
+        }
+        if (backdrop) {
+            backdrop.addEventListener('click', () => document.body.classList.remove('sidebar-open'));
+        }
+        document.querySelectorAll('.app-sidebar-nav a').forEach(a => {
+            a.addEventListener('click', () => document.body.classList.remove('sidebar-open'));
+        });
+    }
+
+    async function loadProviderStrip() {
+        const list = document.getElementById('providerStripList');
+        if (!list) return;
+        try {
+            const res = await window.decypharrUtils.fetcher('/api/debrid/status');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            const providers = data.providers || [];
+            if (!providers.length) {
+                list.innerHTML = '<span class="provider-strip-empty">No providers</span>';
+                return;
+            }
+            list.innerHTML = providers.map(p => {
+                const slug = providerSlug(p.type || p.name);
+                const status = p.status === 'active' ? 'active' : (p.status === 'error' ? 'error' : 'warning');
+                const color = providerColor(p.type || p.name);
+                return `
+                    <div class="provider-pill" data-prov="${slug}" data-status="${status}"
+                         style="--prov-color:${color}"
+                         title="${window.decypharrUtils.escapeHtml(p.name)}${p.error ? ' — ' + window.decypharrUtils.escapeHtml(p.error) : ''}">
+                        <span class="pp-dot"></span>
+                        <span class="pp-name">${window.decypharrUtils.escapeHtml(p.name)}</span>
+                    </div>
+                `;
+            }).join('');
+        } catch (e) {
+            list.innerHTML = `<span class="provider-strip-empty">Unavailable</span>`;
+        }
+    }
+
+    async function loadTopbarThroughput() {
+        const value = document.getElementById('appThroughputValue');
+        if (!value) return;
+        try {
+            const res = await window.decypharrUtils.fetcher('/api/torrents?limit=200&state=downloading');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            const list = data.torrents || [];
+            const total = list.reduce((s, t) => s + (t.dlspeed || t.speed || 0), 0);
+            value.textContent = total > 0 ? `${window.decypharrUtils.formatBytes(total)}/s` : 'idle';
+        } catch (e) {
+            value.textContent = '—';
+        }
+    }
+
+    function init() {
+        setupSidebar();
+        loadProviderStrip();
+        loadTopbarThroughput();
+        setInterval(loadProviderStrip, 30000);
+        setInterval(loadTopbarThroughput, 5000);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+
 // Export for ES6 modules if needed
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = DecypharrUtils;

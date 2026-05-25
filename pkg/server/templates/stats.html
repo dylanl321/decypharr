@@ -18,15 +18,15 @@
     <div id="stats-content" style="display: none;">
         <!-- Tab Navigation -->
         <div role="tablist" class="tabs tabs-boxed mb-6">
-            <a role="tab" class="tab tab-active" data-tab="overview">
-                <i class="bi bi-speedometer2 mr-2"></i>Overview
+            <a role="tab" class="tab tab-active" data-tab="providers">
+                <i class="bi bi-collection mr-2"></i>Providers
+            </a>
+            <a role="tab" class="tab" data-tab="overview">
+                <i class="bi bi-speedometer2 mr-2"></i>System
             </a>
             <a role="tab" class="tab" data-tab="streams">
                 <i class="bi bi-broadcast mr-2"></i>Streams
                 <span class="badge badge-sm ml-2" id="streams-tab-count">0</span>
-            </a>
-            <a role="tab" class="tab" data-tab="providers">
-                <i class="bi bi-collection mr-2"></i>Providers
             </a>
             <a role="tab" class="tab" data-tab="mount">
                 <i class="bi bi-hdd-stack mr-2"></i>Mount
@@ -36,8 +36,47 @@
             </a>
         </div>
 
-        <!-- Overview Tab -->
-        <div id="tab-overview" class="tab-content">
+        <!-- Providers Tab (now default) -->
+        <div id="tab-providers" class="tab-content">
+            <!-- Provider summary row -->
+            <div class="kpi-grid mb-4">
+                <div class="kpi-card">
+                    <div class="kpi-label">Providers</div>
+                    <div class="kpi-value" id="prov-count">—</div>
+                    <div class="kpi-sub" id="prov-active-sub">all healthy</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Library size</div>
+                    <div class="kpi-value" id="prov-library">—</div>
+                    <div class="kpi-sub">aggregated</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Active links</div>
+                    <div class="kpi-value" id="prov-active-links">—</div>
+                    <div class="kpi-sub">in flight</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Streams</div>
+                    <div class="kpi-value" id="prov-streams">—</div>
+                    <div class="kpi-sub">active</div>
+                </div>
+            </div>
+
+            <div id="providers-grid" class="grid gap-4"
+                 style="grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));">
+                <div class="provider-card opacity-60">
+                    <div class="kpi-label">Loading providers…</div>
+                </div>
+            </div>
+
+            <!-- Legacy raw provider list (hidden but kept for backward-compat) -->
+            <div class="card bg-base-100 shadow-sm mt-4" style="display:none;" id="providers-card">
+                <div class="card-body p-4" id="providers-content"></div>
+            </div>
+        </div>
+
+        <!-- System Overview Tab -->
+        <div id="tab-overview" class="tab-content hidden">
             <div class="card bg-base-100 shadow-xl">
                 <div class="card-header p-6 pb-3">
                     <h2 class="card-title text-xl">
@@ -190,21 +229,7 @@
             </div>
         </div>
 
-        <!-- Providers Tab -->
-        <div id="tab-providers" class="tab-content hidden">
-            <div class="card bg-base-100 shadow-xl" id="providers-card">
-                <div class="card-header p-6 pb-3">
-                    <h2 class="card-title text-xl">
-                        <i class="bi bi-collection text-secondary"></i>
-                        Providers
-                    </h2>
-                </div>
-                <div class="card-body p-6 pt-3" id="providers-content">
-                    <p class="text-base-content/70">Loading providers...</p>
-                </div>
-            </div>
-        </div>
-
+        <!-- Providers Tab (legacy - now consolidated at top) -->
         <!-- Ingests Tab -->
         <div id="tab-ingests" class="tab-content hidden">
             <div class="card bg-base-100 shadow-xl">

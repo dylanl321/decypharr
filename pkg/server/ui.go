@@ -110,7 +110,7 @@ func (s *Server) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) IndexHandler(w http.ResponseWriter, r *http.Request) {
 	cfg := config.Get()
-	data := s.layoutData(r, "index", "Queues", map[string]interface{}{
+	data := s.layoutData(r, "index", "Queue", map[string]interface{}{
 		"SetupError":              cfg.SetupError(),
 		"SetupAlertMessage":       "Your configuration is incomplete (" + cfg.SetupError() + "). Please complete the setup in the",
 		"SetupAlertLink":          cfg.URLBase + "settings",
@@ -119,6 +119,20 @@ func (s *Server) IndexHandler(w http.ResponseWriter, r *http.Request) {
 	err := s.templates.ExecuteTemplate(w, "layout", data)
 	if err != nil {
 		s.logger.Warn().Err(err).Msg("error rendering /index template")
+	}
+}
+
+func (s *Server) OverviewHandler(w http.ResponseWriter, r *http.Request) {
+	cfg := config.Get()
+	data := s.layoutData(r, "overview", "Overview", map[string]interface{}{
+		"SetupError":         cfg.SetupError(),
+		"SetupAlertMessage":  "Your configuration is incomplete (" + cfg.SetupError() + "). Please complete the setup in the",
+		"SetupAlertLink":     cfg.URLBase + "settings",
+		"SetupAlertLinkText": "Settings page",
+	})
+	err := s.templates.ExecuteTemplate(w, "layout", data)
+	if err != nil {
+		s.logger.Warn().Err(err).Msg("error rendering /overview template")
 	}
 }
 

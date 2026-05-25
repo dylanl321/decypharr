@@ -69,6 +69,8 @@ func (m *Manager) AddNewTorrent(ctx context.Context, importReq *ImportRequest) e
 		Tags:             []string{},
 	}
 	torrent.ContentPath = torrent.DownloadPath()
+	torrent.AppendEvent(storage.TimelineAdded, "", "Added via "+importReq.Arr.Name)
+	torrent.AppendEvent(storage.TimelineDebridSubmitted, debridTorrent.Debrid, "")
 
 	// Add to queue
 	if err := m.queue.Add(torrent); err != nil {

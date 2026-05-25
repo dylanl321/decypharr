@@ -184,6 +184,12 @@ class ConfigManager {
             document.querySelector('[name="allowed_file_types"]').value = config.allowed_file_types.join(', ');
         }
 
+        // Global download bandwidth limit (nested under download.*)
+        const globalBwInput = document.querySelector('[name="download.bandwidth_limit"]');
+        if (globalBwInput && config.download && typeof config.download.bandwidth_limit === 'string') {
+            globalBwInput.value = config.download.bandwidth_limit;
+        }
+
         // Set up downloader section toggle
         this.setupDownloaderToggle();
     }
@@ -490,6 +496,15 @@ class ConfigManager {
                                        name="debrid[${index}].download_rate_limit" id="debrid[${index}].download_rate_limit" 
                                        placeholder="150/minute">
                                 <span class="text-sm opacity-70">API rate limit for download operations</span>
+                            </div>
+                            <div>
+                                <label class="label" for="debrid[${index}].bandwidth_limit">
+                                    <span class=" font-medium">Bandwidth Limit</span>
+                                </label>
+                                <input type="text" class="input w-full"
+                                       name="debrid[${index}].bandwidth_limit" id="debrid[${index}].bandwidth_limit"
+                                       placeholder="10MB/s">
+                                <span class="text-sm opacity-70">Cap local download throughput from this provider. Empty = unlimited.</span>
                             </div>
                             <div>
                                 <label class="label" for="debrid[${index}].proxy">
@@ -1198,6 +1213,9 @@ class ConfigManager {
             refresh_interval: document.querySelector('[name="refresh_interval"]').value || "30s",
             default_download_action: document.querySelector('[name="default_download_action"]')?.value || "symlink",
             max_downloads: parseInt(document.querySelector('[name="max_downloads"]').value) || 0,
+            download: {
+                bandwidth_limit: document.querySelector('[name="download.bandwidth_limit"]')?.value || ""
+            },
             skip_pre_cache: document.querySelector('[name="skip_pre_cache"]').checked,
             always_rm_tracker_urls: document.querySelector('[name="always_rm_tracker_urls"]').checked,
             folder_naming: document.querySelector('[name="folder_naming"]')?.value || "",
@@ -1452,6 +1470,11 @@ class ConfigManager {
                 add_samples: addSamplesInput.checked,
                 user_agent: userAgentInput.value
             };
+
+            const bandwidthLimitInput = getField('bandwidth_limit');
+            if (bandwidthLimitInput) {
+                debrid.bandwidth_limit = bandwidthLimitInput.value;
+            }
 
             if (allowTorrentsInput) {
                 debrid.allow_torrents = allowTorrentsInput.checked;

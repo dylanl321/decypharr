@@ -1,0 +1,63 @@
+{{ define "overview" }}
+<div class="space-y-6">
+    {{ template "partials/setup_alert" . }}
+
+    <section class="kpi-grid" id="kpiGrid">
+        <div class="kpi-card">
+            <div class="kpi-label">Active downloads</div>
+            <div class="kpi-value" id="kpiActive">—</div>
+            <div class="kpi-sub" id="kpiActiveSub">in progress</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Queue depth</div>
+            <div class="kpi-value" id="kpiQueue">—</div>
+            <div class="kpi-sub" id="kpiQueueSub">total entries</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Throughput</div>
+            <div class="kpi-value" id="kpiThroughput">—</div>
+            <div class="kpi-sub" id="kpiThroughputSub">aggregated</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-label">Errors</div>
+            <div class="kpi-value text-error" id="kpiErrors">—</div>
+            <div class="kpi-sub" id="kpiErrorsSub">last 24h</div>
+        </div>
+    </section>
+
+    <section>
+        <div class="flex items-center justify-between mb-2">
+            <h2 class="text-lg font-bold">Providers</h2>
+            <span class="text-xs opacity-60" id="providersUpdated">—</span>
+        </div>
+        <div class="grid gap-3" id="providerGrid"
+             style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+            <div class="provider-card opacity-60">
+                <div class="kpi-label">Loading providers…</div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="flex items-center justify-between mb-2">
+            <h2 class="text-lg font-bold">Active now</h2>
+            <a href="{{.URLBase}}" class="link link-hover text-xs">View all →</a>
+        </div>
+        <div class="active-strip" id="activeStrip">
+            <div class="opacity-60 text-sm p-3">No active downloads.</div>
+        </div>
+    </section>
+
+    <section>
+        <div class="flex items-center justify-between mb-2">
+            <h2 class="text-lg font-bold">Throughput (last 5 min)</h2>
+            <span class="bw-cap" id="bwCapLabel" title="Configured global cap">cap: —</span>
+        </div>
+        <div class="card bg-base-100 shadow-sm">
+            <div class="card-body p-3">
+                <div id="overviewThroughputChart" style="min-height: 220px;"></div>
+            </div>
+        </div>
+    </section>
+</div>
+{{ end }}
