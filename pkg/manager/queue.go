@@ -3,6 +3,8 @@ package manager
 import (
 	"cmp"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"sort"
@@ -193,13 +195,11 @@ func (q *Queue) AddPending(importReq *ImportRequest, reason string) error {
 		magnet = importReq.Magnet.Link
 		protocol = config.ProtocolTorrent
 	} else if importReq.NZBContent != nil {
-		nzb, err := parser.Parse(importReq.NZBContent)
-		if err != nil {
-			return fmt.Errorf("failed to parse NZB: %w", err)
-		}
-		infohash = nzb.Hash
+		// Generate a deterministic hash from NZB content for tracking
+		sum := md5.Sum(importReq.NZBContent)
+		infohash = hex.EncodeToString(sum[:])
 		name = importReq.Name
-		size = nzb.TotalSize
+		size = int64(len(importReq.NZBContent))
 		protocol = config.ProtocolNZB
 	} else {
 		return fmt.Errorf("either magnet or NZB content is required")

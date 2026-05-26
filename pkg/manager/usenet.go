@@ -3,6 +3,8 @@ package manager
 import (
 	"cmp"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -37,12 +39,9 @@ func (m *Manager) addNewNZBViaDebrid(ctx context.Context, req *ImportRequest) (s
 			if err := m.queue.AddPending(req, reason); err != nil {
 				return "", fmt.Errorf("failed to add pending nzb entry: %w", err)
 			}
-			// Return the hash from the NZB content
-			nzb, parseErr := parser.Parse(req.NZBContent)
-			if parseErr != nil {
-				return "", fmt.Errorf("failed to parse nzb for hash: %w", parseErr)
-			}
-			return nzb.Hash, nil
+			// Return a deterministic hash from NZB content
+			sum := md5.Sum(req.NZBContent)
+			return hex.EncodeToString(sum[:]), nil
 		}
 		return "", fmt.Errorf("failed to submit nzb to debrid: %w", err)
 	}
