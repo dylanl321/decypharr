@@ -221,7 +221,7 @@ func (q *Queue) AddPending(importReq *ImportRequest, reason string) error {
 		Status:           debridTypes.TorrentStatusQueued,
 		Progress:         0,
 		Action:           importReq.Action,
-		DownloadUncached: importReq.DownloadUncached,
+		DownloadUncached: importReq.DownloadUncached != nil && *importReq.DownloadUncached,
 		CallbackURL:      importReq.CallBackUrl,
 		SkipMultiSeason:  importReq.SkipMultiSeason,
 		CreatedAt:        now,
@@ -234,6 +234,7 @@ func (q *Queue) AddPending(importReq *ImportRequest, reason string) error {
 		PendingAttempts:  0,
 		LastAttemptAt:    &now,
 		BlockedProviders: []string{},
+		NZBContent:       importReq.NZBContent,
 	}
 	entry.ContentPath = entry.DownloadPath()
 	entry.AppendEvent(storage.TimelinePendingAccepted, "", fmt.Sprintf("Accepted, waiting for available provider: %s", reason))

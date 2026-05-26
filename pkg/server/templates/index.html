@@ -30,6 +30,10 @@
                     <i class="bi bi-hourglass-split"></i> Queued
                     <span class="badge badge-sm" id="pillQueued">0</span>
                 </button>
+                <button class="btn btn-sm btn-ghost" data-state-pill="pending">
+                    <i class="bi bi-clock-history text-warning"></i> Pending
+                    <span class="badge badge-sm" id="pillPending">0</span>
+                </button>
                 <button class="btn btn-sm btn-ghost" data-state-pill="pausedUP">
                     <i class="bi bi-check-circle text-success"></i> Completed
                     <span class="badge badge-sm" id="pillCompleted">0</span>
@@ -78,6 +82,7 @@
                         <select class="select select-sm" id="stateFilter">
                             <option value="">All States</option>
                             <option value="queued">Queued</option>
+                            <option value="pending">Pending</option>
                             <option value="downloading">Downloading</option>
                             <option value="pausedUP">Completed</option>
                             <option value="error">Error</option>

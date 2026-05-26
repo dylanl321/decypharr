@@ -103,6 +103,7 @@ class TorrentDashboard {
             setText('pillTotal', total);
             setText('pillDownloading', byState.downloading || 0);
             setText('pillQueued', byState.queued || 0);
+            setText('pillPending', byState.pending || 0);
             setText('pillCompleted', byState.pausedUP || 0);
             setText('pillErrors', byState.error || (data.errors ? data.errors.length : 0));
         } catch (err) {
@@ -481,16 +482,25 @@ class TorrentDashboard {
                                 data-action="open-timeline">
                             <i class="bi bi-clock-history"></i>
                         </button>
+                        ${torrent.state === 'pending' ? `
+                            <button class="btn btn-ghost btn-xs text-info"
+                                    title="Retry Now"
+                                    onclick="window.dashboard.retryPendingEntry('${torrent.info_hash}');">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                        ` : ''}
                         <button class="btn btn-ghost btn-xs text-error"
                                 title="Delete Torrent"
                                 onclick="window.dashboard.deleteTorrent('${torrent.info_hash}', '${this.escapeAttr(torrent.category || '')}', false);">
                             <i class="bi bi-trash"></i>
                         </button>
-                        <button class="btn btn-ghost btn-xs text-error"
-                                title="Delete from Provider"
-                                onclick="window.dashboard.deleteTorrent('${torrent.info_hash}', '${this.escapeAttr(torrent.category || '')}', true);">
-                            <i class="bi bi-cloud-slash"></i>
-                        </button>
+                        ${torrent.state !== 'pending' ? `
+                            <button class="btn btn-ghost btn-xs text-error"
+                                    title="Delete from Provider"
+                                    onclick="window.dashboard.deleteTorrent('${torrent.info_hash}', '${this.escapeAttr(torrent.category || '')}', true);">
+                                <i class="bi bi-cloud-slash"></i>
+                            </button>
+                        ` : ''}
                     </td>
                 </tr>
             `;
@@ -503,7 +513,8 @@ class TorrentDashboard {
             'downloading': { class: 'badge-info', text: 'Downloading', icon: 'bi-arrow-down-circle' },
             'error': { class: 'badge-error', text: 'Error', icon: 'bi-exclamation-triangle' },
             'queued': { class: 'badge-ghost', text: 'Queued', icon: 'bi-hourglass-split' },
-            'paused': { class: 'badge-warning', text: 'Paused', icon: 'bi-pause-circle' }
+            'paused': { class: 'badge-warning', text: 'Paused', icon: 'bi-pause-circle' },
+            'pending': { class: 'badge-warning', text: 'Pending', icon: 'bi-clock-history' }
         };
         const s = stateMap[torrent.state] || { class: 'badge-ghost', text: torrent.state || 'unknown', icon: 'bi-question' };
         const phaseLabels = {
@@ -514,10 +525,12 @@ class TorrentDashboard {
             complete: 'Complete'
         };
         const phase = torrent.phase ? (phaseLabels[torrent.phase] || torrent.phase) : '';
+        const reason = torrent.pending_reason || torrent.last_error || torrent.state || '';
         return `
-            <div class="tooltip tooltip-left" data-tip="${this.escapeAttr(torrent.last_error || (torrent.state || ''))}">
+            <div class="tooltip tooltip-left" data-tip="${this.escapeAttr(reason)}">
                 <span class="badge ${s.class} badge-sm gap-1"><i class="bi ${s.icon}"></i>${s.text}</span>
                 ${phase ? `<span class="text-[10px] block opacity-60 mt-0.5">${this.escapeHtml(phase)}</span>` : ''}
+                ${torrent.state === 'pending' && torrent.pending_reason ? `<span class="text-[10px] block opacity-60 mt-0.5">${this.escapeHtml(torrent.pending_reason)}</span>` : ''}
             </div>
         `;
     }
@@ -700,6 +713,21 @@ class TorrentDashboard {
         const allSelected = this.state.torrents.length > 0 &&
             this.state.torrents.every(t => this.state.selectedEntries.has(t.info_hash));
         this.refs.selectAll.checked = allSelected;
+    }
+
+    async retryPendingEntry(hash) {
+        try {
+            const url = `${window.urlBase}api/queue/${hash}/retry`;
+            const response = await window.decypharrUtils.fetcher(url, {method: 'POST'});
+
+            if (!response.ok) throw new Error('Failed to retry entry');
+
+            window.decypharrUtils.createToast('Retry scheduled successfully');
+            this.loadTorrents();
+        } catch (error) {
+            console.error('Error retrying entry:', error);
+            window.decypharrUtils.createToast('Failed to retry entry', 'error');
+        }
     }
 
     async deleteTorrent(hash, category, removeFromDebrid = false) {

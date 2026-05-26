@@ -111,6 +111,7 @@ type Entry struct {
 	PendingAttempts  int        `msgpack:"pending_attempts,omitempty" json:"pending_attempts,omitempty"`   // Number of retry attempts
 	LastAttemptAt    *time.Time `msgpack:"last_attempt_at,omitempty" json:"last_attempt_at,omitempty"`     // Last retry attempt time
 	BlockedProviders []string   `msgpack:"blocked_providers,omitempty" json:"blocked_providers,omitempty"` // Providers that returned DMCA/451 for this hash
+	NZBContent       []byte     `msgpack:"nzb_content,omitempty" json:"nzb_content,omitempty"`             // Raw NZB content for pending retry
 
 	// Timeline is an append-only event log surfaced to the UI. It is persisted
 	// in a sidecar store (see Storage.{Get,Put}Timeline) rather than in the

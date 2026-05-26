@@ -75,6 +75,7 @@ func (s *Server) WebRoutes() http.Handler {
 			r.Delete("/queue/completed", s.handleDeleteCompleted)
 			r.Delete("/queue/errors", s.handleDeleteErrors)
 			r.Post("/queue/retry-all-errors", s.handleRetryAllErrors)
+			r.Post("/queue/cleanup", s.handleCleanupCompleted)
 
 			// Debrid Provider Management
 			r.Get("/debrid/providers", s.handleGetDebridProviders)

@@ -10,6 +10,7 @@ import (
 	"github.com/sirrobot01/decypharr/internal/config"
 	"github.com/sirrobot01/decypharr/internal/utils"
 	debrid "github.com/sirrobot01/decypharr/pkg/debrid/common"
+	debridTypes "github.com/sirrobot01/decypharr/pkg/debrid/types"
 	"github.com/sirrobot01/decypharr/pkg/storage"
 )
 
@@ -357,10 +358,24 @@ func (m *Manager) retryPendingEntry(ctx context.Context, entry *storage.Entry) {
 			entry.SkipMultiSeason,
 		)
 	} else if entry.IsNZB() {
-		// For NZBs, we'd need to reconstruct or store the original NZB content
-		// For now, log and skip NZB retries (will be handled in task #12)
-		m.logger.Warn().Str("hash", entry.InfoHash).Msg("NZB pending retry not yet implemented")
-		return
+		// Reconstruct NZB import request from stored content
+		if entry.NZBContent == nil || len(entry.NZBContent) == 0 {
+			m.logger.Error().Str("hash", entry.InfoHash).Msg("Cannot retry NZB pending entry: NZB content not stored")
+			entry.MarkAsError(fmt.Errorf("cannot retry: NZB content not available"))
+			_ = m.queue.Update(entry)
+			return
+		}
+		arr := m.arr.GetOrCreate(entry.Category)
+		importReq = NewNZBRequest(
+			entry.Name,
+			entry.SavePath,
+			entry.NZBContent,
+			arr,
+			entry.Action,
+			entry.CallbackURL,
+			ImportTypeAPI,
+			entry.SkipMultiSeason,
+		)
 	}
 
 	// Filter out blocked providers
@@ -371,8 +386,28 @@ func (m *Manager) retryPendingEntry(ctx context.Context, entry *storage.Entry) {
 			Msg("Skipping blocked providers for this entry")
 	}
 
-	// Try to submit
-	debridTorrent, err := m.SendToDebrid(ctx, importReq)
+	// Try to submit based on protocol
+	var debridTorrent *debridTypes.Torrent
+	var err error
+
+	if entry.IsNZB() {
+		// For NZB, call AddNewNZB which handles the submission
+		hash, submitErr := m.AddNewNZB(ctx, importReq)
+		if submitErr != nil {
+			err = submitErr
+		} else {
+			// Successfully submitted NZB - remove the pending entry since AddNewNZB creates a new one
+			m.logger.Info().
+				Str("hash", entry.InfoHash).
+				Str("new_hash", hash).
+				Msg("Pending NZB entry successfully resubmitted")
+			_ = m.queue.Delete(entry.InfoHash, nil)
+			return
+		}
+	} else {
+		// For torrents, use SendToDebrid
+		debridTorrent, err = m.SendToDebrid(ctx, importReq)
+	}
 	if err != nil {
 		// Check if still retryable
 		reason, shouldPend := m.classifySubmitError(err, importReq)

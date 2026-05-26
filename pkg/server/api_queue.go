@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/sirrobot01/decypharr/internal/config"
@@ -97,7 +98,7 @@ func synthesizeTimeline(t *storage.Entry) []storage.TimelineEvent {
 	return out
 }
 
-// handleRetryQueueItem retries/requeues a failed item
+// handleRetryQueueItem retries/requeues a failed or pending item
 func (s *Server) handleRetryQueueItem(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
 	if hash == "" {
@@ -111,8 +112,31 @@ func (s *Server) handleRetryQueueItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert storage.Entry back to ImportRequest for requeueing
-	// We need the original magnet and arr info
+	// Special handling for pending entries: reset retry counters for immediate pickup
+	if torrent.State == storage.EntryStatePending {
+		err := s.manager.Queue().UpdateWhere(
+			func(t *storage.Entry) bool {
+				return t.InfoHash == hash
+			},
+			func(t *storage.Entry) bool {
+				t.LastAttemptAt = nil
+				t.PendingAttempts = 0
+				t.UpdatedAt = time.Now()
+				return true
+			},
+		)
+
+		if err != nil {
+			s.logger.Error().Err(err).Str("hash", hash).Msg("Failed to reset pending entry retry counters")
+			http.Error(w, "Failed to retry", http.StatusInternalServerError)
+			return
+		}
+
+		utils.JSONResponse(w, map[string]string{"status": "retry_scheduled"}, http.StatusOK)
+		return
+	}
+
+	// For error/failed entries: convert back to ImportRequest and requeue
 	if torrent.InfoHash == "" {
 		http.Error(w, "Cannot retry: missing info hash", http.StatusBadRequest)
 		return
@@ -289,5 +313,65 @@ func (s *Server) handleRetryAllErrors(w http.ResponseWriter, r *http.Request) {
 		"retried": successCount,
 		"failed":  failCount,
 		"total":   len(erroredItems),
+	}, http.StatusOK)
+}
+
+// handleCleanupCompleted removes all completed entries from their debrid providers
+func (s *Server) handleCleanupCompleted(w http.ResponseWriter, r *http.Request) {
+	// Get all completed entries
+	completedEntries := s.manager.Queue().ListFilter("", config.ProtocolAll, storage.EntryStatePausedUP, nil, "", false)
+
+	var successCount, failCount int
+
+	for _, entry := range completedEntries {
+		if entry.ActiveProvider == "" {
+			continue
+		}
+
+		// Get the debrid client for this entry
+		debridClient := s.manager.ProviderClient(entry.ActiveProvider)
+		if debridClient == nil {
+			s.logger.Warn().
+				Str("hash", entry.InfoHash).
+				Str("provider", entry.ActiveProvider).
+				Msg("Debrid client not found for cleanup")
+			failCount++
+			continue
+		}
+
+		// Get the provider-specific torrent ID
+		providerEntry, ok := entry.Providers[entry.ActiveProvider]
+		if !ok || providerEntry == nil || providerEntry.ID == "" {
+			s.logger.Warn().
+				Str("hash", entry.InfoHash).
+				Str("provider", entry.ActiveProvider).
+				Msg("Provider entry not found for cleanup")
+			failCount++
+			continue
+		}
+
+		// Delete from provider
+		if err := debridClient.DeleteTorrent(providerEntry.ID); err != nil {
+			s.logger.Error().
+				Err(err).
+				Str("hash", entry.InfoHash).
+				Str("provider", entry.ActiveProvider).
+				Str("torrent_id", providerEntry.ID).
+				Msg("Failed to delete torrent from provider")
+			failCount++
+		} else {
+			s.logger.Info().
+				Str("hash", entry.InfoHash).
+				Str("provider", entry.ActiveProvider).
+				Str("torrent_id", providerEntry.ID).
+				Msg("Successfully deleted torrent from provider")
+			successCount++
+		}
+	}
+
+	utils.JSONResponse(w, map[string]interface{}{
+		"cleaned": successCount,
+		"failed":  failCount,
+		"total":   len(completedEntries),
 	}, http.StatusOK)
 }
