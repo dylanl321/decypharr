@@ -1254,6 +1254,10 @@ class ConfigManager {
             categories: (document.getElementById('categories')?.value || '')
                 .split(',').map((c) => c.trim()).filter(Boolean),
             torrent_debrid: document.getElementById('torrent_debrid')?.value || '',
+            torrent_debrid_order: (document.getElementById('torrent_debrid_order')?.value || '')
+                .split(',').map((c) => c.trim()).filter(Boolean),
+            nzb_debrid_order: (document.getElementById('nzb_debrid_order')?.value || '')
+                .split(',').map((c) => c.trim()).filter(Boolean),
             cleanup_on_complete: this.collectCleanupOnComplete(),
         };
     }
@@ -1297,6 +1301,10 @@ class ConfigManager {
 
         const torrentDebridEl = document.getElementById('torrent_debrid');
         if (torrentDebridEl) torrentDebridEl.value = config.torrent_debrid || '';
+        const torrentOrderEl = document.getElementById('torrent_debrid_order');
+        if (torrentOrderEl) torrentOrderEl.value = (config.torrent_debrid_order || []).join(', ');
+        const nzbOrderEl = document.getElementById('nzb_debrid_order');
+        if (nzbOrderEl) nzbOrderEl.value = (config.nzb_debrid_order || []).join(', ');
 
         this.populateCleanupOnComplete(config.cleanup_on_complete || {});
     }

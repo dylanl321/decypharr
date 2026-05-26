@@ -2,6 +2,7 @@ package sabnzbd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,11 +10,35 @@ import (
 	"strings"
 
 	"github.com/sirrobot01/decypharr/internal/config"
+	"github.com/sirrobot01/decypharr/internal/customerror"
 	"github.com/sirrobot01/decypharr/internal/utils"
 	"github.com/sirrobot01/decypharr/pkg/arr"
 	"github.com/sirrobot01/decypharr/pkg/manager"
 	"github.com/sirrobot01/decypharr/pkg/storage"
 )
+
+// statusForAddError maps known submission errors to an HTTP status that the
+// *arr clients can interpret correctly. DMCA blocks (content_blocked) become
+// 451 so the *arr marks the release as failed and tries another release;
+// slot exhaustion becomes 503 with a Retry-After hint so the *arr backs off
+// instead of treating the failure as terminal.
+func statusForAddError(err error) (int, http.Header) {
+	if err == nil {
+		return http.StatusInternalServerError, nil
+	}
+	var ce *customerror.Error
+	if errors.As(err, &ce) {
+		switch ce.Code {
+		case "content_blocked":
+			return http.StatusUnavailableForLegalReasons, nil
+		case "too_many_active_downloads":
+			h := http.Header{}
+			h.Set("Retry-After", "30")
+			return http.StatusServiceUnavailable, h
+		}
+	}
+	return http.StatusInternalServerError, nil
+}
 
 // handleAPI is the main handler for all SABnzbd API requests
 func (s *SABnzbd) handleAPI(w http.ResponseWriter, r *http.Request) {
@@ -302,7 +327,8 @@ func (s *SABnzbd) handleAddURL(w http.ResponseWriter, r *http.Request) {
 	// Split URLs by newline to support multiple URLs
 	urlList := strings.Split(urls, "\n")
 	var nzoIDs []string
-	var errors []string
+	var errMsgs []string
+	var firstErr error
 
 	for _, url := range urlList {
 		url = strings.TrimSpace(url)
@@ -313,7 +339,10 @@ func (s *SABnzbd) handleAddURL(w http.ResponseWriter, r *http.Request) {
 		nzoID, err := s.addNZBURL(ctx, url, _arr, action)
 		if err != nil {
 			s.logger.Error().Err(err).Str("url", url).Msg("Failed to add NZB from URL")
-			errors = append(errors, fmt.Sprintf("Failed to add %s: %v", url, err))
+			errMsgs = append(errMsgs, fmt.Sprintf("Failed to add %s: %v", url, err))
+			if firstErr == nil {
+				firstErr = err
+			}
 			continue
 		}
 		if nzoID != "" {
@@ -323,10 +352,10 @@ func (s *SABnzbd) handleAddURL(w http.ResponseWriter, r *http.Request) {
 
 	if len(nzoIDs) == 0 {
 		errMsg := "Failed to add any NZBs"
-		if len(errors) > 0 {
-			errMsg = strings.Join(errors, "; ")
+		if len(errMsgs) > 0 {
+			errMsg = strings.Join(errMsgs, "; ")
 		}
-		s.writeError(w, errMsg, http.StatusInternalServerError)
+		s.writeAddError(w, errMsg, firstErr)
 		return
 	}
 
@@ -335,9 +364,8 @@ func (s *SABnzbd) handleAddURL(w http.ResponseWriter, r *http.Request) {
 		NzoIds: nzoIDs,
 	}
 
-	// Include partial errors if some URLs failed
-	if len(errors) > 0 {
-		response.Error = fmt.Sprintf("Partial success: %s", strings.Join(errors, "; "))
+	if len(errMsgs) > 0 {
+		response.Error = fmt.Sprintf("Partial success: %s", strings.Join(errMsgs, "; "))
 	}
 
 	utils.JSONResponse(w, response, http.StatusOK)
@@ -373,7 +401,8 @@ func (s *SABnzbd) handleAddFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var nzoIDs []string
-	var errors []string
+	var errMsgs []string
+	var firstErr error
 
 	// Try to get multiple files from "name" field
 	if r.MultipartForm != nil && r.MultipartForm.File != nil {
@@ -387,7 +416,7 @@ func (s *SABnzbd) handleAddFile(w http.ResponseWriter, r *http.Request) {
 		for _, fileHeader := range files {
 			file, err := fileHeader.Open()
 			if err != nil {
-				errors = append(errors, fmt.Sprintf("Failed to open %s: %v", fileHeader.Filename, err))
+				errMsgs = append(errMsgs, fmt.Sprintf("Failed to open %s: %v", fileHeader.Filename, err))
 				continue
 			}
 
@@ -395,7 +424,7 @@ func (s *SABnzbd) handleAddFile(w http.ResponseWriter, r *http.Request) {
 			content, err := io.ReadAll(file)
 			file.Close()
 			if err != nil {
-				errors = append(errors, fmt.Sprintf("Failed to read %s: %v", fileHeader.Filename, err))
+				errMsgs = append(errMsgs, fmt.Sprintf("Failed to read %s: %v", fileHeader.Filename, err))
 				continue
 			}
 
@@ -403,7 +432,10 @@ func (s *SABnzbd) handleAddFile(w http.ResponseWriter, r *http.Request) {
 			nzbID, err := s.addNZBFile(ctx, content, fileHeader.Filename, _arr, action)
 			if err != nil {
 				s.logger.Error().Err(err).Str("filename", fileHeader.Filename).Msg("Failed to add NZB file")
-				errors = append(errors, fmt.Sprintf("Failed to add %s: %v", fileHeader.Filename, err))
+				errMsgs = append(errMsgs, fmt.Sprintf("Failed to add %s: %v", fileHeader.Filename, err))
+				if firstErr == nil {
+					firstErr = err
+				}
 				continue
 			}
 			if nzbID != "" {
@@ -429,7 +461,7 @@ func (s *SABnzbd) handleAddFile(w http.ResponseWriter, r *http.Request) {
 		// Parse NZB file
 		nzbID, err := s.addNZBFile(ctx, content, header.Filename, _arr, action)
 		if err != nil {
-			s.writeError(w, fmt.Sprintf("Failed to add NZB file: %s", err.Error()), http.StatusInternalServerError)
+			s.writeAddError(w, fmt.Sprintf("Failed to add NZB file: %s", err.Error()), err)
 			return
 		}
 		if nzbID != "" {
@@ -439,10 +471,10 @@ func (s *SABnzbd) handleAddFile(w http.ResponseWriter, r *http.Request) {
 
 	if len(nzoIDs) == 0 {
 		errMsg := "Failed to add any NZB files"
-		if len(errors) > 0 {
-			errMsg = strings.Join(errors, "; ")
+		if len(errMsgs) > 0 {
+			errMsg = strings.Join(errMsgs, "; ")
 		}
-		s.writeError(w, errMsg, http.StatusInternalServerError)
+		s.writeAddError(w, errMsg, firstErr)
 		return
 	}
 
@@ -451,9 +483,8 @@ func (s *SABnzbd) handleAddFile(w http.ResponseWriter, r *http.Request) {
 		NzoIds: nzoIDs,
 	}
 
-	// Include partial errors if some files failed
-	if len(errors) > 0 {
-		response.Error = fmt.Sprintf("Partial success: %s", strings.Join(errors, "; "))
+	if len(errMsgs) > 0 {
+		response.Error = fmt.Sprintf("Partial success: %s", strings.Join(errMsgs, "; "))
 	}
 
 	utils.JSONResponse(w, response, http.StatusOK)
@@ -559,6 +590,23 @@ func (s *SABnzbd) getHistory(ctx context.Context, limit int, nzoIDs []string) Hi
 }
 
 func (s *SABnzbd) writeError(w http.ResponseWriter, message string, status int) {
+	response := StatusResponse{
+		Status: false,
+		Error:  message,
+	}
+	utils.JSONResponse(w, response, status)
+}
+
+// writeAddError mirrors writeError but derives the HTTP status (and any
+// Retry-After header) from the underlying submission error so that the
+// calling *arr can react correctly to DMCA blocks and slot exhaustion.
+func (s *SABnzbd) writeAddError(w http.ResponseWriter, message string, err error) {
+	status, hdr := statusForAddError(err)
+	for k, vv := range hdr {
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
+	}
 	response := StatusResponse{
 		Status: false,
 		Error:  message,

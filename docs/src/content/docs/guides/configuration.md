@@ -97,6 +97,8 @@ Run torrents on Real-Debrid and NZBs on Torbox, with Torbox as a torrent overflo
 ```json
 {
   "torrent_debrid": "",
+  "torrent_debrid_order": ["torbox", "realdebrid"],
+  "nzb_debrid_order": ["torbox"],
   "debrids": [
     {
       "name": "realdebrid",
@@ -139,6 +141,8 @@ After a download finishes locally, optionally delete the entry from the debrid p
 | `cleanup_on_complete.delay`                | string  | Optional wait (e.g. `30s`) before running cleanup so *arr import can finish               | `""`           |
 
 The global `torrent_debrid` field, when set, pins all torrent submissions to one debrid name (mirrors `usenet.debrid` for torrents). Per-`*arr` `selected_debrid` still wins over the pin.
+
+`torrent_debrid_order` (and `nzb_debrid_order`) lets you express a soft *preference* without losing fallback. Providers listed are tried first in the given order; any other torrent-eligible (or NZB-eligible) providers are tried afterwards in their physical config order. Unlike `torrent_debrid`, this still falls back to the next provider on per-provider failures (e.g. an HTTP 451 / DMCA block). When `prefer_cached_provider` is enabled, a cached provider is still promoted above this order.
 
 ## Usenet
 

@@ -658,8 +658,9 @@ type namedNZBClient struct {
 
 func (m *Manager) orderedNamedNZBClients(selectedDebrid string) []namedNZBClient {
 	cfg := config.Get()
-	out := make([]namedNZBClient, 0, len(cfg.Debrids))
-	for _, dc := range cfg.Debrids {
+	debrids := applyDebridOrder(cfg.Debrids, cfg.NZBDebridOrder)
+	out := make([]namedNZBClient, 0, len(debrids))
+	for _, dc := range debrids {
 		if selectedDebrid != "" && dc.Name != selectedDebrid {
 			continue
 		}

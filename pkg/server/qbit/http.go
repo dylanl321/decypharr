@@ -1,15 +1,52 @@
 package qbit
 
 import (
+	"errors"
 	"net/http"
 	"path/filepath"
 	"strings"
 
 	"github.com/sirrobot01/decypharr/internal/config"
+	"github.com/sirrobot01/decypharr/internal/customerror"
 	"github.com/sirrobot01/decypharr/internal/utils"
 	"github.com/sirrobot01/decypharr/pkg/arr"
 	"github.com/sirrobot01/decypharr/pkg/storage"
 )
+
+// statusForAddError maps known submission errors to an HTTP status that
+// Sonarr/Radarr can interpret correctly. DMCA blocks (content_blocked) become
+// 451 so the *arr marks the release as failed and tries another release;
+// slot exhaustion becomes 503 with a Retry-After hint so the *arr backs off
+// instead of treating the failure as terminal.
+func statusForAddError(err error) (int, http.Header) {
+	if err == nil {
+		return http.StatusBadRequest, nil
+	}
+	var ce *customerror.Error
+	if errors.As(err, &ce) {
+		switch ce.Code {
+		case "content_blocked":
+			return http.StatusUnavailableForLegalReasons, nil
+		case "too_many_active_downloads":
+			h := http.Header{}
+			h.Set("Retry-After", "30")
+			return http.StatusServiceUnavailable, h
+		}
+	}
+	return http.StatusBadRequest, nil
+}
+
+// writeAddError writes the response with the appropriate status and headers
+// derived from statusForAddError.
+func writeAddError(w http.ResponseWriter, err error) {
+	status, hdr := statusForAddError(err)
+	for k, vv := range hdr {
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
+	}
+	http.Error(w, err.Error(), status)
+}
 
 func (q *QBit) handleLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -135,7 +172,7 @@ func (q *QBit) handleTorrentsAdd(w http.ResponseWriter, r *http.Request) {
 		for _, url := range urlList {
 			if err := q.addMagnet(ctx, url, _arr, debridName, action, cfg.Notifications.CallbackURL, rmTrackerUrls, cfg.SkipMultiSeason); err != nil {
 				q.logger.Debug().Msgf("Error adding magnet: %s", err.Error())
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeAddError(w, err)
 				return
 			}
 			atleastOne = true
@@ -148,7 +185,7 @@ func (q *QBit) handleTorrentsAdd(w http.ResponseWriter, r *http.Request) {
 			for _, fileHeader := range files {
 				if err := q.addTorrent(ctx, fileHeader, _arr, debridName, action, cfg.Notifications.CallbackURL, rmTrackerUrls, cfg.SkipMultiSeason); err != nil {
 					q.logger.Debug().Err(err).Msgf("Error adding torrent")
-					http.Error(w, err.Error(), http.StatusBadRequest)
+					writeAddError(w, err)
 					return
 				}
 				atleastOne = true

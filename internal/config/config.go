@@ -202,6 +202,17 @@ type Config struct {
 	// TorrentDebrid optionally pins all torrent submissions to a single debrid name (mirrors usenet.debrid for torrents).
 	TorrentDebrid string `json:"torrent_debrid,omitempty"`
 
+	// TorrentDebridOrder is an explicit preference list of debrid names for torrent
+	// submissions. When set, providers are tried in this order first (subject to
+	// allow_torrents and slot availability), with any remaining torrent-eligible
+	// providers tried afterwards in their config order. `prefer_cached_provider`
+	// still promotes a cached provider above this order. Empty list (default)
+	// preserves the previous behavior of using the physical `debrids` array order.
+	TorrentDebridOrder []string `json:"torrent_debrid_order,omitempty"`
+
+	// NZBDebridOrder is the NZB analogue of TorrentDebridOrder.
+	NZBDebridOrder []string `json:"nzb_debrid_order,omitempty"`
+
 	// CleanupOnComplete controls automatic removal from provider/queue after local completion.
 	CleanupOnComplete CleanupOnComplete `json:"cleanup_on_complete,omitzero"`
 }

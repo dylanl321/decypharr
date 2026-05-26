@@ -135,6 +135,22 @@
                        placeholder="(empty = try all eligible)">
                 <span class="text-sm opacity-70">Optional: pin all torrent submissions to one debrid name (mirrors <code>usenet.debrid</code>).</span>
             </div>
+            <div>
+                <label class="label" for="torrent_debrid_order">
+                    <span class="font-medium">Torrent provider preference</span>
+                </label>
+                <input type="text" class="input w-full" name="torrent_debrid_order" id="torrent_debrid_order"
+                       placeholder="e.g. torbox, realdebrid">
+                <span class="text-sm opacity-70">Comma-separated debrid names tried in this order for torrents. Unlisted providers fall back in config order. Cache promotion still wins when <code>prefer_cached_provider</code> is on.</span>
+            </div>
+            <div>
+                <label class="label" for="nzb_debrid_order">
+                    <span class="font-medium">NZB provider preference</span>
+                </label>
+                <input type="text" class="input w-full" name="nzb_debrid_order" id="nzb_debrid_order"
+                       placeholder="e.g. torbox">
+                <span class="text-sm opacity-70">Same as above but for NZB submissions to debrid providers.</span>
+            </div>
         </div>
     </div>
 </div>
