@@ -403,6 +403,20 @@ type TorrentFile struct {
 
 // ToQBitTorrent converts to QBitTorrent format for API compatibility
 func convertToQBitTorrentTorrent(t *storage.Entry) Torrent {
+	// Map pending state to qBit-compatible state so Sonarr/Radarr doesn't re-grab
+	state := t.State
+	if state == storage.EntryStatePending {
+		// Map pending reasons to appropriate qBit states
+		switch t.PendingReason {
+		case "slot_exhausted", "provider_blocked":
+			state = "stalledDL" // Stalled download - waiting
+		case "rate_limited":
+			state = "metaDL" // Fetching metadata
+		default:
+			state = "stalledDL"
+		}
+	}
+
 	qbitTorrent := Torrent{
 		Hash:         t.InfoHash,
 		Name:         t.Name,
@@ -411,7 +425,7 @@ func convertToQBitTorrentTorrent(t *storage.Entry) Torrent {
 		Dlspeed:      t.Speed,
 		Eta:          int64(0), // ETA not tracked
 		NumSeeds:     t.Seeders,
-		State:        t.State,
+		State:        state,
 		Category:     t.Category,
 		SavePath:     t.SavePath,
 		ContentPath:  t.ContentPath,

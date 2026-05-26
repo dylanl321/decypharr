@@ -215,6 +215,11 @@ type Config struct {
 
 	// CleanupOnComplete controls automatic removal from provider/queue after local completion.
 	CleanupOnComplete CleanupOnComplete `json:"cleanup_on_complete,omitzero"`
+
+	// Pending queue configuration (accept-then-process backlog)
+	MaxPendingHours                 int `json:"max_pending_hours,omitempty"`                     // Hours before timing out pending entries (default: 6)
+	PendingRetryIntervalSeconds     int `json:"pending_retry_interval_seconds,omitempty"`        // Initial retry interval (default: 30)
+	PendingMaxRetryIntervalSeconds  int `json:"pending_max_retry_interval_seconds,omitempty"`    // Max retry interval with exponential backoff (default: 900 = 15min)
 }
 
 // CleanupOnComplete controls what happens after an entry finishes the local action.

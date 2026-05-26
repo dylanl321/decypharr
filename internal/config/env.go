@@ -137,6 +137,23 @@ func (c *Config) applyEnvOverrides() {
 		}
 	}
 
+	// Pending queue configuration
+	if val := getEnv("MAX_PENDING_HOURS"); val != "" {
+		if v, err := strconv.Atoi(val); err == nil {
+			c.MaxPendingHours = v
+		}
+	}
+	if val := getEnv("PENDING_RETRY_INTERVAL_SECONDS"); val != "" {
+		if v, err := strconv.Atoi(val); err == nil {
+			c.PendingRetryIntervalSeconds = v
+		}
+	}
+	if val := getEnv("PENDING_MAX_RETRY_INTERVAL_SECONDS"); val != "" {
+		if v, err := strconv.Atoi(val); err == nil {
+			c.PendingMaxRetryIntervalSeconds = v
+		}
+	}
+
 	c.applyMountEnvVars()
 
 	c.applyDebridEnvVars()

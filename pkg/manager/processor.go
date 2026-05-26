@@ -30,15 +30,16 @@ func (m *Manager) AddNewTorrent(ctx context.Context, importReq *ImportRequest) e
 
 	debridTorrent, err = m.SendToDebrid(ctx, importReq)
 	if err != nil {
-		// Check if too many active downloads
-		var customErr *customerror.Error
-		if errors.As(err, &customErr) && customErr.Code == "too_many_active_downloads" {
-			m.logger.Warn().Msgf("Too many active downloads, marking as queued: %s", importReq.Magnet.Name)
-			if err := m.queue.ReQueue(importReq); err != nil {
-				return err
+		// Classify the error to determine if we should queue as pending
+		reason, shouldPend := m.classifySubmitError(err, importReq)
+		if shouldPend {
+			m.logger.Warn().Msgf("Submit failed, accepting as pending: %s - %s", importReq.Magnet.Name, reason)
+			if err := m.queue.AddPending(importReq, reason); err != nil {
+				return fmt.Errorf("failed to add pending entry: %w", err)
 			}
 			return nil
 		}
+		// Truly permanent error - reject the request
 		return fmt.Errorf("failed to submit torrent to debrid: %w", err)
 	}
 
@@ -463,6 +464,56 @@ func submitAttemptEvent(a SubmitAttempt) (storage.TimelineEventKind, string) {
 		}
 		return storage.TimelineProviderSkipped, msg
 	}
+}
+
+// classifySubmitError determines if an error from SendToDebrid is retryable
+// and maps it to a pending_reason string. Returns (reason, shouldPend).
+func (m *Manager) classifySubmitError(err error, importReq *ImportRequest) (string, bool) {
+	var customErr *customerror.Error
+	if errors.As(err, &customErr) {
+		// Check for permanent errors that should not be retried
+		if customErr.IsPermanent() {
+			return "", false
+		}
+
+		// Check for retryable errors
+		switch customErr.Code {
+		case "too_many_active_downloads":
+			return "slot_exhausted", true
+		case "content_blocked":
+			// All providers blocked this hash - mark as provider_blocked
+			// Check if ALL attempts were blocked
+			allBlocked := true
+			for _, attempt := range importReq.SubmitAttempts {
+				if attempt.Code != "content_blocked" && attempt.Code != "dmca_blocked" {
+					allBlocked = false
+					break
+				}
+			}
+			if allBlocked && len(importReq.SubmitAttempts) > 0 {
+				return "provider_blocked", true
+			}
+			// Some providers failed for other reasons, retry those
+			return "provider_blocked", true
+		case "hoster_unavailable":
+			return "rate_limited", true
+		case "traffic_exceeded":
+			return "rate_limited", true
+		}
+
+		// Generic retryable error
+		if customErr.IsRetryable() {
+			return "rate_limited", true
+		}
+	}
+
+	// Check if no providers configured
+	if strings.Contains(err.Error(), "no debrid clients available") {
+		return "", false // Permanent - can't retry without configuration
+	}
+
+	// Default: treat unknown errors as potentially retryable
+	return "rate_limited", true
 }
 
 func (m *Manager) processNewNZBDebrid(entry *storage.Entry, usenetDownload *debridTypes.UsenetDownload) {

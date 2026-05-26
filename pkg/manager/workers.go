@@ -2,11 +2,15 @@ package manager
 
 import (
 	"context"
+	"fmt"
+	"math"
+	"time"
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/sirrobot01/decypharr/internal/config"
 	"github.com/sirrobot01/decypharr/internal/utils"
 	debrid "github.com/sirrobot01/decypharr/pkg/debrid/common"
+	"github.com/sirrobot01/decypharr/pkg/storage"
 )
 
 // runInitialCalls performs any initial calls of worker functions
@@ -76,6 +80,21 @@ func (m *Manager) addQueueProcessorJob(ctx context.Context) error {
 			m.processStaleQueueEntries()
 		}), gocron.WithContext(ctx)); err != nil {
 			m.logger.Error().Err(err).Msg("Failed to create stale queue processor job")
+		}
+	}
+
+	// Pending queue processor (retry pending entries)
+	retryInterval := m.config.PendingRetryIntervalSeconds
+	if retryInterval == 0 {
+		retryInterval = 30 // default 30s
+	}
+	if jd, err := utils.ConvertToJobDef(fmt.Sprintf("%ds", retryInterval)); err == nil {
+		if _, err := m.scheduler.NewJob(jd, gocron.NewTask(func() {
+			m.processPendingEntries(ctx)
+		}), gocron.WithContext(ctx)); err != nil {
+			m.logger.Error().Err(err).Msg("Failed to create pending queue processor job")
+		} else {
+			m.logger.Debug().Msgf("Pending queue processor job scheduled for every %ds", retryInterval)
 		}
 	}
 
@@ -238,4 +257,180 @@ func (m *Manager) StartWorker(ctx context.Context) error {
 	m.scheduler.Start()
 	m.cetScheduler.Start()
 	return nil
+}
+
+// processPendingEntries retries pending entries with exponential backoff
+func (m *Manager) processPendingEntries(ctx context.Context) {
+	cfg := m.config
+	maxPendingHours := cfg.MaxPendingHours
+	if maxPendingHours == 0 {
+		maxPendingHours = 6 // default 6 hours
+	}
+	minRetryInterval := cfg.PendingRetryIntervalSeconds
+	if minRetryInterval == 0 {
+		minRetryInterval = 30 // default 30s
+	}
+	maxRetryInterval := cfg.PendingMaxRetryIntervalSeconds
+	if maxRetryInterval == 0 {
+		maxRetryInterval = 900 // default 15 minutes
+	}
+
+	// Get all pending entries
+	pendingEntries := m.queue.ListFilter("", config.ProtocolAll, storage.EntryStatePending, nil, "", false)
+	if len(pendingEntries) == 0 {
+		return
+	}
+
+	m.logger.Debug().Msgf("Processing %d pending entries", len(pendingEntries))
+
+	for _, entry := range pendingEntries {
+		// Check if entry has expired
+		hoursPending := time.Since(entry.CreatedAt).Hours()
+		if hoursPending > float64(maxPendingHours) {
+			m.logger.Warn().
+				Str("hash", entry.InfoHash).
+				Str("name", entry.Name).
+				Float64("hours", hoursPending).
+				Msgf("Pending entry expired after %.1fh", hoursPending)
+
+			entry.State = storage.EntryStateError
+			entry.Phase = ""
+			entry.LastError = fmt.Sprintf("timed out after %.1fh waiting for provider", hoursPending)
+			entry.ErrorCount++
+			now := time.Now()
+			entry.LastErrorTime = &now
+			entry.UpdatedAt = now
+			entry.AppendEvent(storage.TimelinePendingExpired, "", fmt.Sprintf("Timed out after %.1fh", hoursPending))
+			_ = m.queue.Update(entry)
+			continue
+		}
+
+		// Check if enough time has passed for retry (exponential backoff)
+		if entry.LastAttemptAt != nil {
+			backoffSeconds := float64(minRetryInterval) * math.Pow(2, float64(entry.PendingAttempts))
+			if backoffSeconds > float64(maxRetryInterval) {
+				backoffSeconds = float64(maxRetryInterval)
+			}
+			nextRetry := entry.LastAttemptAt.Add(time.Duration(backoffSeconds) * time.Second)
+			if time.Now().Before(nextRetry) {
+				continue // Not time to retry yet
+			}
+		}
+
+		// Attempt to submit to debrid
+		m.retryPendingEntry(ctx, entry)
+	}
+}
+
+// retryPendingEntry attempts to submit a pending entry to an available provider
+func (m *Manager) retryPendingEntry(ctx context.Context, entry *storage.Entry) {
+	m.logger.Info().
+		Str("hash", entry.InfoHash).
+		Str("name", entry.Name).
+		Int("attempt", entry.PendingAttempts+1).
+		Msg("Retrying pending entry")
+
+	// Increment attempt counter
+	entry.PendingAttempts++
+	now := time.Now()
+	entry.LastAttemptAt = &now
+	entry.UpdatedAt = now
+	_ = m.queue.Update(entry)
+
+	// Reconstruct ImportRequest from entry
+	var importReq *ImportRequest
+	if entry.IsTorrent() {
+		magnet, err := utils.GetMagnetInfo(entry.Magnet, m.config.AlwaysRmTrackerUrls)
+		if err != nil {
+			magnet = utils.ConstructMagnet(entry.InfoHash, entry.Name)
+		}
+		arr := m.arr.GetOrCreate(entry.Category)
+		importReq = NewTorrentRequest(
+			"", // Let SendToDebrid choose based on config
+			entry.SavePath,
+			magnet,
+			arr,
+			entry.Action,
+			&entry.DownloadUncached,
+			entry.CallbackURL,
+			ImportTypeAPI,
+			entry.SkipMultiSeason,
+		)
+	} else if entry.IsNZB() {
+		// For NZBs, we'd need to reconstruct or store the original NZB content
+		// For now, log and skip NZB retries (will be handled in task #12)
+		m.logger.Warn().Str("hash", entry.InfoHash).Msg("NZB pending retry not yet implemented")
+		return
+	}
+
+	// Filter out blocked providers
+	if len(entry.BlockedProviders) > 0 {
+		m.logger.Debug().
+			Str("hash", entry.InfoHash).
+			Strs("blocked", entry.BlockedProviders).
+			Msg("Skipping blocked providers for this entry")
+	}
+
+	// Try to submit
+	debridTorrent, err := m.SendToDebrid(ctx, importReq)
+	if err != nil {
+		// Check if still retryable
+		reason, shouldPend := m.classifySubmitError(err, importReq)
+		if !shouldPend {
+			// Permanent failure
+			m.logger.Error().Err(err).Str("hash", entry.InfoHash).Msg("Pending entry failed permanently")
+			entry.MarkAsError(fmt.Errorf("permanent failure: %w", err))
+			_ = m.queue.Update(entry)
+			return
+		}
+
+		// Update blocked providers list
+		for _, attempt := range importReq.SubmitAttempts {
+			if attempt.Code == "content_blocked" || attempt.Code == "dmca_blocked" {
+				// Add to blocked list if not already there
+				found := false
+				for _, blocked := range entry.BlockedProviders {
+					if blocked == attempt.Provider {
+						found = true
+						break
+					}
+				}
+				if !found {
+					entry.BlockedProviders = append(entry.BlockedProviders, attempt.Provider)
+				}
+			}
+		}
+
+		// Update reason and continue pending
+		entry.PendingReason = reason
+		entry.UpdatedAt = time.Now()
+		entry.AppendEvent(storage.TimelinePendingRetryFailed, "", fmt.Sprintf("Retry #%d failed: %s", entry.PendingAttempts, reason))
+		_ = m.queue.Update(entry)
+		m.logger.Debug().
+			Str("hash", entry.InfoHash).
+			Int("attempt", entry.PendingAttempts).
+			Str("reason", reason).
+			Msg("Pending entry retry failed, will retry later")
+		return
+	}
+
+	// Success! Promote to downloading
+	m.logger.Info().
+		Str("hash", entry.InfoHash).
+		Str("provider", debridTorrent.Debrid).
+		Msg("Pending entry successfully submitted")
+
+	// Update entry to downloading state
+	entry.State = storage.EntryStateDownloading
+	entry.Phase = storage.DownloadPhaseDebridFetching
+	entry.Status = debridTorrent.Status
+	entry.ActiveProvider = debridTorrent.Debrid
+	entry.PendingReason = ""
+	entry.UpdatedAt = time.Now()
+	entry.AppendEvent(storage.TimelinePendingPromoted, debridTorrent.Debrid, fmt.Sprintf("Provider available after %d attempts", entry.PendingAttempts))
+	entry.AppendEvent(storage.TimelineDebridSubmitted, debridTorrent.Debrid, "")
+
+	// Process same as AddNewTorrent would
+	_ = m.queue.Update(entry)
+	go m.processNewTorrent(entry, debridTorrent)
 }

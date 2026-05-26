@@ -25,6 +25,7 @@ const (
 	SwitcherStatusFailed     SwitcherStatus = "failed"
 	SwitcherStatusCancelled  SwitcherStatus = "cancelled"
 
+	EntryStatePending     TorrentState = "pending"
 	EntryStateDownloading TorrentState = "downloading"
 	EntryStatePausedDL    TorrentState = "pausedDL"
 	EntryStatePausedUP    TorrentState = "pausedUP"
@@ -105,6 +106,12 @@ type Entry struct {
 	ErrorCount    int        `msgpack:"error_count,omitempty" json:"error_count,omitempty"`         // Number of errors
 	LastErrorTime *time.Time `msgpack:"last_error_time,omitempty" json:"last_error_time,omitempty"` // Last error time
 
+	// Pending queue tracking
+	PendingReason    string     `msgpack:"pending_reason,omitempty" json:"pending_reason,omitempty"`       // Reason for pending state (slot_exhausted, provider_blocked, etc.)
+	PendingAttempts  int        `msgpack:"pending_attempts,omitempty" json:"pending_attempts,omitempty"`   // Number of retry attempts
+	LastAttemptAt    *time.Time `msgpack:"last_attempt_at,omitempty" json:"last_attempt_at,omitempty"`     // Last retry attempt time
+	BlockedProviders []string   `msgpack:"blocked_providers,omitempty" json:"blocked_providers,omitempty"` // Providers that returned DMCA/451 for this hash
+
 	// Timeline is an append-only event log surfaced to the UI. It is persisted
 	// in a sidecar store (see Storage.{Get,Put}Timeline) rather than in the
 	// proto Entry record so the existing on-disk format does not change.
@@ -117,6 +124,10 @@ type TimelineEventKind string
 const (
 	TimelineAdded              TimelineEventKind = "added"
 	TimelineQueued             TimelineEventKind = "queued"
+	TimelinePendingAccepted    TimelineEventKind = "pending_accepted"
+	TimelinePendingRetryFailed TimelineEventKind = "pending_retry_failed"
+	TimelinePendingPromoted    TimelineEventKind = "pending_promoted"
+	TimelinePendingExpired     TimelineEventKind = "pending_expired"
 	TimelineDebridSubmitted    TimelineEventKind = "debrid_submitted"
 	TimelineDebridReady        TimelineEventKind = "debrid_ready"
 	TimelineProviderBlocked    TimelineEventKind = "provider_blocked"

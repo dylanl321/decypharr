@@ -6,6 +6,20 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap**, 
 
 ### Added
 
+#### Backlog queue: accept-then-process architecture
+
+- **Always accept grabs:** qBittorrent `torrents/add` and SABnzbd `addfile` endpoints now always return success (200 OK) for all grabs from Sonarr/Radarr, even when providers are unavailable (slots exhausted, DMCA blocked, rate-limited). Previously these failures caused *arr apps to retry every 12s in a tight loop.
+- **Pending state:** New `EntryStatePending` with sub-states tracked in `PendingReason` field: `slot_exhausted` (all providers at slot limit), `provider_blocked` (all providers returned DMCA/451 for this hash), `rate_limited` (all providers rate-limited), `no_eligible_provider` (no provider supports this protocol).
+- **Per-entry DMCA blocklist:** New `BlockedProviders []string` field tracks which providers returned HTTP 451 for a specific hash. Background retry worker skips these providers for that entry while still trying them for others—this is NOT a global blocklist.
+- **Background retry worker:** `processPendingEntries()` runs every 30s (configurable via `pending_retry_interval_seconds`), retrying pending entries with exponential backoff (`min(30s * 2^attempts, 15min)`, capped by `pending_max_retry_interval_seconds`). Entries pending longer than `max_pending_hours` (default 6h) are marked as error so *arr apps can re-grab a different release.
+- **qBit state mapping:** Pending entries appear in `torrents/info` as `stalledDL` (slot_exhausted, provider_blocked) or `metaDL` (rate_limited) so Sonarr/Radarr sees them as "in progress" and doesn't re-grab.
+- **SABnzbd state mapping:** Pending NZBs appear in `queue` API as "Queued" status.
+- **Timeline events:** New kinds `pending_accepted`, `pending_retry_failed`, `pending_promoted`, `pending_expired` track the pending lifecycle in the history drawer.
+- **Config:** New fields `max_pending_hours` (default 6), `pending_retry_interval_seconds` (default 30), `pending_max_retry_interval_seconds` (default 900 = 15min), configurable via JSON, env vars (`DECYPHARR_MAX_PENDING_HOURS`, etc.), and web UI.
+- **NZB support:** `AddNewNZB` for debrid-backend NZBs now uses the same accept-then-process logic as torrents.
+
+### Added
+
 #### UI redesign: app shell, Overview, and provider-first stats
 
 - **App shell:** New collapsible left sidebar + compact topbar in `templates/layout.html` with provider status pills and a global theme toggle. Active-route highlighting and density-friendly typography land in `assets/styles.css`.

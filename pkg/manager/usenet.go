@@ -30,6 +30,20 @@ func (m *Manager) addNewNZBViaDebrid(ctx context.Context, req *ImportRequest) (s
 
 	usenetDownload, err := m.SendToNZBDebrid(ctx, req)
 	if err != nil {
+		// Classify error and determine if should be pending
+		reason, shouldPend := m.classifyNZBSubmitError(err, req)
+		if shouldPend {
+			m.logger.Warn().Msgf("NZB submit failed, accepting as pending: %s - %s", req.Name, reason)
+			if err := m.queue.AddPending(req, reason); err != nil {
+				return "", fmt.Errorf("failed to add pending nzb entry: %w", err)
+			}
+			// Return the hash from the NZB content
+			nzb, parseErr := parser.Parse(req.NZBContent)
+			if parseErr != nil {
+				return "", fmt.Errorf("failed to parse nzb for hash: %w", parseErr)
+			}
+			return nzb.Hash, nil
+		}
 		return "", fmt.Errorf("failed to submit nzb to debrid: %w", err)
 	}
 
@@ -343,4 +357,11 @@ func (m *Manager) syncNZBs(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// classifyNZBSubmitError determines if an NZB submit error is retryable
+// and maps it to a pending_reason string. Returns (reason, shouldPend).
+func (m *Manager) classifyNZBSubmitError(err error, req *ImportRequest) (string, bool) {
+	// For NZB errors, use same logic as torrents
+	return m.classifySubmitError(err, req)
 }

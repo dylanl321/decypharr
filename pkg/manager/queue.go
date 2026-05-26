@@ -174,6 +174,83 @@ func (q *Queue) Add(torrent *storage.Entry) error {
 	return nil
 }
 
+// AddPending creates a pending entry from an import request that failed to submit.
+// The entry will be retried by the background worker until it succeeds or times out.
+func (q *Queue) AddPending(importReq *ImportRequest, reason string) error {
+	if importReq == nil {
+		return fmt.Errorf("import request is required")
+	}
+
+	var infohash, name string
+	var size int64
+	var protocol config.Protocol
+	var magnet string
+
+	if importReq.Magnet != nil {
+		infohash = importReq.Magnet.InfoHash
+		name = importReq.Magnet.Name
+		size = importReq.Magnet.Size
+		magnet = importReq.Magnet.Link
+		protocol = config.ProtocolTorrent
+	} else if importReq.NZBContent != nil {
+		nzb, err := parser.Parse(importReq.NZBContent)
+		if err != nil {
+			return fmt.Errorf("failed to parse NZB: %w", err)
+		}
+		infohash = nzb.Hash
+		name = importReq.Name
+		size = nzb.TotalSize
+		protocol = config.ProtocolNZB
+	} else {
+		return fmt.Errorf("either magnet or NZB content is required")
+	}
+
+	now := time.Now()
+	entry := &storage.Entry{
+		Protocol:         protocol,
+		InfoHash:         infohash,
+		Name:             name,
+		OriginalFilename: name,
+		Size:             size,
+		Bytes:            size,
+		Magnet:           magnet,
+		Category:         importReq.Arr.Name,
+		SavePath:         config.ResolveCategoryPath(importReq.Arr.Name, importReq.DownloadFolder, importReq.Arr.Name),
+		State:            storage.EntryStatePending,
+		Phase:            storage.DownloadPhaseQueued,
+		Status:           debridTypes.TorrentStatusQueued,
+		Progress:         0,
+		Action:           importReq.Action,
+		DownloadUncached: importReq.DownloadUncached,
+		CallbackURL:      importReq.CallBackUrl,
+		SkipMultiSeason:  importReq.SkipMultiSeason,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		AddedOn:          now,
+		Providers:        make(map[string]*storage.ProviderEntry),
+		Files:            make(map[string]*storage.File),
+		Tags:             []string{},
+		PendingReason:    reason,
+		PendingAttempts:  0,
+		LastAttemptAt:    &now,
+		BlockedProviders: []string{},
+	}
+	entry.ContentPath = entry.DownloadPath()
+	entry.AppendEvent(storage.TimelinePendingAccepted, "", fmt.Sprintf("Accepted, waiting for available provider: %s", reason))
+
+	// Record submit attempts that led to pending state
+	for _, attempt := range importReq.SubmitAttempts {
+		if attempt.Code == "content_blocked" || attempt.Code == "dmca_blocked" {
+			entry.BlockedProviders = append(entry.BlockedProviders, attempt.Provider)
+			entry.AppendEvent(storage.TimelineProviderBlocked, attempt.Provider, attempt.Message)
+		} else {
+			entry.AppendEvent(storage.TimelineProviderSkipped, attempt.Provider, attempt.Message)
+		}
+	}
+
+	return q.Add(entry)
+}
+
 func (q *Queue) GetTorrent(infohash string) (*storage.Entry, error) {
 	t, err := q.storage.GetQueued(infohash)
 	if err != nil {

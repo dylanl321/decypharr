@@ -307,6 +307,8 @@ func getNZBFiles(e *storage.Entry) []File {
 // mapStorageStateToSABStatus maps storage.TorrentState to SABnzbd status
 func mapStorageStateToSABStatus(state storage.TorrentState) string {
 	switch state {
+	case storage.EntryStatePending:
+		return StatusQueued // Pending entries appear as queued in SABnzbd
 	case storage.EntryStateDownloading:
 		return StatusDownloading
 	case storage.EntryStatePausedDL:
