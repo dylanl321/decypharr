@@ -21,75 +21,20 @@ import (
 	"github.com/sirrobot01/decypharr/pkg/usenet"
 )
 
-// AddNewTorrent creates a torrent from import request and processes it
+// AddNewTorrent creates a torrent from import request and processes it.
+// *arr-facing import types accept immediately and submit to debrid in the background.
 func (m *Manager) AddNewTorrent(ctx context.Context, importReq *ImportRequest) error {
-	var (
-		debridTorrent *debridTypes.Torrent
-		err           error
-	)
-
-	debridTorrent, err = m.SendToDebrid(ctx, importReq)
-	if err != nil {
-		// Classify the error to determine if we should queue as pending
-		reason, shouldPend := m.classifySubmitError(err, importReq)
-		if shouldPend {
-			m.logger.Warn().Msgf("Submit failed, accepting as pending: %s - %s", importReq.Magnet.Name, reason)
-			if err := m.queue.AddPending(importReq, reason); err != nil {
-				return fmt.Errorf("failed to add pending entry: %w", err)
-			}
-			return nil
+	switch importReq.Type {
+	case ImportTypeQBit, ImportTypeSABnzbd:
+		hash, err := m.acceptTorrentImport(importReq)
+		if err != nil {
+			return err
 		}
-		// Truly permanent error - reject the request
-		return fmt.Errorf("failed to submit torrent to debrid: %w", err)
+		m.schedulePendingSubmit(hash)
+		return nil
+	default:
+		return m.submitTorrentImport(ctx, importReq)
 	}
-
-	// Create managed torrent with InfoHash as primary key
-	torrent := &storage.Entry{
-		InfoHash:         importReq.Magnet.InfoHash,
-		Name:             importReq.Magnet.Name,
-		OriginalFilename: importReq.Magnet.Name,
-		Protocol:         config.ProtocolTorrent,
-		Size:             importReq.Magnet.Size,
-		Bytes:            importReq.Magnet.Size,
-		Magnet:           importReq.Magnet.Link,
-		Category:         importReq.Arr.Name,
-		SavePath:         config.ResolveCategoryPath(importReq.Arr.Name, importReq.DownloadFolder, importReq.Arr.Name),
-		Status:           debridTypes.TorrentStatusDownloading,
-		State:            storage.EntryStateDownloading,
-		Phase:            storage.DownloadPhaseDebridFetching,
-		Progress:         0,
-		Action:           importReq.Action,
-		DownloadUncached: debridTorrent.DownloadUncached,
-		CallbackURL:      importReq.CallBackUrl,
-		SkipMultiSeason:  importReq.SkipMultiSeason,
-		CreatedAt:        time.Now(),
-		UpdatedAt:        time.Now(),
-		AddedOn:          time.Now(),
-		Providers:        make(map[string]*storage.ProviderEntry),
-		Files:            make(map[string]*storage.File),
-		Tags:             []string{},
-	}
-	torrent.ContentPath = torrent.DownloadPath()
-	torrent.AppendEvent(storage.TimelineAdded, "", "Added via "+importReq.Arr.Name)
-	if importReq.QueuedAt != nil {
-		waited := time.Since(*importReq.QueuedAt).Round(time.Second)
-		torrent.AppendEvent(storage.TimelineQueued, "", fmt.Sprintf("Waited %s for free debrid slot", waited))
-	}
-	for _, attempt := range importReq.SubmitAttempts {
-		kind, msg := submitAttemptEvent(attempt)
-		torrent.AppendEvent(kind, attempt.Provider, msg)
-	}
-	torrent.AppendEvent(storage.TimelineDebridSubmitted, debridTorrent.Debrid, "")
-
-	// Add to queue
-	if err := m.queue.Add(torrent); err != nil {
-		return fmt.Errorf("failed to add torrent to queue: %w", err)
-	}
-
-	// Parse in background
-	go m.processNewTorrent(torrent, debridTorrent)
-
-	return nil
 }
 
 func (m *Manager) processQueuedEntries() {

@@ -189,7 +189,7 @@ func (q *Queue) AddPending(importReq *ImportRequest, reason string) error {
 	var magnet string
 
 	if importReq.Magnet != nil {
-		infohash = importReq.Magnet.InfoHash
+		infohash = strings.ToLower(importReq.Magnet.InfoHash)
 		name = importReq.Magnet.Name
 		size = importReq.Magnet.Size
 		magnet = importReq.Magnet.Link
@@ -197,7 +197,7 @@ func (q *Queue) AddPending(importReq *ImportRequest, reason string) error {
 	} else if importReq.NZBContent != nil {
 		// Generate a deterministic hash from NZB content for tracking
 		sum := md5.Sum(importReq.NZBContent)
-		infohash = hex.EncodeToString(sum[:])
+		infohash = strings.ToLower(hex.EncodeToString(sum[:]))
 		name = importReq.Name
 		size = int64(len(importReq.NZBContent))
 		protocol = config.ProtocolNZB
@@ -237,7 +237,11 @@ func (q *Queue) AddPending(importReq *ImportRequest, reason string) error {
 		NZBContent:       importReq.NZBContent,
 	}
 	entry.ContentPath = entry.DownloadPath()
-	entry.AppendEvent(storage.TimelinePendingAccepted, "", fmt.Sprintf("Accepted, waiting for available provider: %s", reason))
+	msg := fmt.Sprintf("Accepted, waiting for available provider: %s", reason)
+	if reason == pendingReasonAccepted {
+		msg = "Accepted, queued for provider submit"
+	}
+	entry.AppendEvent(storage.TimelinePendingAccepted, "", msg)
 
 	// Record submit attempts that led to pending state
 	for _, attempt := range importReq.SubmitAttempts {
@@ -249,7 +253,47 @@ func (q *Queue) AddPending(importReq *ImportRequest, reason string) error {
 		}
 	}
 
+	if reason == pendingReasonAccepted {
+		entry.LastAttemptAt = nil
+	}
+
 	return q.Add(entry)
+}
+
+// UpsertPending creates or refreshes a pending entry (idempotent for *arr re-adds).
+func (q *Queue) UpsertPending(importReq *ImportRequest, reason string) error {
+	if importReq == nil {
+		return fmt.Errorf("import request is required")
+	}
+
+	var infohash string
+	if importReq.Magnet != nil {
+		infohash = strings.ToLower(importReq.Magnet.InfoHash)
+	} else if importReq.NZBContent != nil {
+		sum := md5.Sum(importReq.NZBContent)
+		infohash = strings.ToLower(hex.EncodeToString(sum[:]))
+	} else {
+		return fmt.Errorf("either magnet or NZB content is required")
+	}
+
+	existing, err := q.GetTorrent(infohash)
+	if err == nil && existing != nil && existing.State == storage.EntryStatePending {
+		existing.UpdatedAt = time.Now()
+		existing.PendingReason = reason
+		if len(importReq.NZBContent) > 0 {
+			existing.NZBContent = importReq.NZBContent
+		}
+		if importReq.Magnet != nil && importReq.Magnet.Link != "" {
+			existing.Magnet = importReq.Magnet.Link
+		}
+		if reason == pendingReasonAccepted {
+			existing.LastAttemptAt = nil
+			existing.PendingAttempts = 0
+		}
+		return q.Update(existing)
+	}
+
+	return q.AddPending(importReq, reason)
 }
 
 func (q *Queue) GetTorrent(infohash string) (*storage.Entry, error) {

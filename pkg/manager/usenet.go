@@ -1,10 +1,7 @@
 package manager
 
 import (
-	"cmp"
 	"context"
-	"crypto/md5"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -30,68 +27,17 @@ func (m *Manager) addNewNZBViaDebrid(ctx context.Context, req *ImportRequest) (s
 		Str("debrid", req.SelectedDebrid).
 		Msg("Adding new NZB via debrid provider")
 
-	usenetDownload, err := m.SendToNZBDebrid(ctx, req)
-	if err != nil {
-		// Classify error and determine if should be pending
-		reason, shouldPend := m.classifyNZBSubmitError(err, req)
-		if shouldPend {
-			m.logger.Warn().Msgf("NZB submit failed, accepting as pending: %s - %s", req.Name, reason)
-			if err := m.queue.AddPending(req, reason); err != nil {
-				return "", fmt.Errorf("failed to add pending nzb entry: %w", err)
-			}
-			// Return a deterministic hash from NZB content
-			sum := md5.Sum(req.NZBContent)
-			return hex.EncodeToString(sum[:]), nil
+	switch req.Type {
+	case ImportTypeSABnzbd:
+		hash, err := m.acceptNZBImport(req)
+		if err != nil {
+			return "", err
 		}
-		return "", fmt.Errorf("failed to submit nzb to debrid: %w", err)
+		m.schedulePendingSubmit(hash)
+		return hash, nil
+	default:
+		return m.submitNZBDebridImport(ctx, req, nil)
 	}
-
-	entry := &storage.Entry{
-		InfoHash:         usenetDownload.Hash,
-		Name:             cmp.Or(usenetDownload.Name, req.Name),
-		OriginalFilename: cmp.Or(usenetDownload.OriginalFilename, req.Name),
-		Size:             usenetDownload.GetSize(),
-		Protocol:         config.ProtocolNZB,
-		Bytes:            usenetDownload.GetSize(),
-		Category:         req.Arr.Name,
-		SavePath:         config.ResolveCategoryPath(req.Arr.Name, req.DownloadFolder, req.Arr.Name),
-		Status:           debridTypes.TorrentStatusDownloading,
-		State:            storage.EntryStateDownloading,
-		Phase:            storage.DownloadPhaseDebridFetching,
-		Progress:         0,
-		Action:           req.Action,
-		DownloadUncached: usenetDownload.DownloadUncached,
-		CallbackURL:      req.CallBackUrl,
-		SkipMultiSeason:  req.SkipMultiSeason,
-		CreatedAt:        time.Now(),
-		UpdatedAt:        time.Now(),
-		AddedOn:          time.Now(),
-		Providers:        make(map[string]*storage.ProviderEntry),
-		Files:            make(map[string]*storage.File),
-		Tags:             []string{},
-	}
-	entry.ContentPath = entry.DownloadPath()
-	backfillEntryFromDebrid(entry, usenetDownload.AsTorrent())
-	entry.Phase = storage.DownloadPhaseDebridFetching
-	entry.DebridProgress = usenetDownload.Progress / 100.0
-	entry.Progress = entry.DebridProgress
-	entry.AppendEvent(storage.TimelineAdded, "", "Added via "+req.Arr.Name)
-	if req.QueuedAt != nil {
-		waited := time.Since(*req.QueuedAt).Round(time.Second)
-		entry.AppendEvent(storage.TimelineQueued, "", fmt.Sprintf("Waited %s for free debrid slot", waited))
-	}
-	for _, attempt := range req.SubmitAttempts {
-		kind, msg := submitAttemptEvent(attempt)
-		entry.AppendEvent(kind, attempt.Provider, msg)
-	}
-	entry.AppendEvent(storage.TimelineDebridSubmitted, usenetDownload.Debrid, "")
-
-	if err := m.queue.Add(entry); err != nil {
-		return "", fmt.Errorf("failed to add nzb to queue: %w", err)
-	}
-
-	go m.processNewNZBDebrid(entry, usenetDownload)
-	return entry.InfoHash, nil
 }
 
 func (m *Manager) addNewNZBViaNNTP(ctx context.Context, req *ImportRequest) (string, error) {

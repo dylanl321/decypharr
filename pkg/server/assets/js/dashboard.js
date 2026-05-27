@@ -454,7 +454,7 @@ class TorrentDashboard {
                             <span class="text-xs text-base-content/60 font-mono">${torrent.info_hash.substring(0, 8)}…</span>
                         </div>
                     </td>
-                    <td>
+                    <td class="hidden md:table-cell">
                         ${provider ? `
                             <span class="prov-chip" data-prov="${provSlug}" data-active="true"
                                   style="--prov-color:${provColor}">
@@ -467,10 +467,8 @@ class TorrentDashboard {
                     <td>
                         ${this.renderProgressCell(torrent)}
                     </td>
-                    <td>
-                        <span class="text-sm font-mono whitespace-nowrap">${this.renderSpeed(torrent)}</span>
-                    </td>
-                    <td>
+                    <td class="hidden lg:table-cell text-sm">${this.renderSpeed(torrent)}</td>
+                    <td class="hidden md:table-cell">
                         ${torrent.category ? `<span class="badge badge-sm badge-outline">${this.escapeHtml(torrent.category)}</span>` : '-'}
                     </td>
                     <td>
@@ -507,30 +505,188 @@ class TorrentDashboard {
         }).join('');
     }
 
+    /**
+     * Derives provider vs local pipeline legs from phase, progress, and action.
+     * Timeline drawer keeps full history; this drives the main queue table.
+     */
+    derivePipeline(torrent) {
+        const phase = torrent.phase || '';
+        const action = torrent.action || 'symlink';
+        const state = torrent.state || '';
+        const debridPct = Math.round((torrent.debrid_progress ?? 0) * 100);
+        const localPct = Math.round((torrent.local_progress ?? 0) * 100);
+        const providerStatus = torrent.status || '';
+        const needsLocalPull = action === 'download';
+        const needsLinking = action === 'symlink' || action === 'strm';
+
+        const provider = { key: 'provider', pct: debridPct, mode: 'waiting', active: false };
+        const local = { key: 'local', pct: localPct, mode: 'waiting', active: false, skipped: action === 'none' };
+        let activeLeg = null;
+        let step = { badge: 'badge-ghost', icon: 'bi-circle', text: 'Idle', sub: '' };
+        let tip = '';
+
+        if (state === 'pausedUP' || phase === 'complete') {
+            provider.mode = 'done';
+            provider.pct = 100;
+            if (needsLocalPull) {
+                local.mode = 'done';
+                local.pct = 100;
+            } else if (needsLinking) {
+                local.mode = 'done';
+                local.pct = 100;
+            } else if (local.skipped) {
+                local.mode = 'skip';
+            }
+            step = { badge: 'badge-success', icon: 'bi-check-circle', text: 'Complete', sub: 'Arr: completed' };
+            return { provider, local, activeLeg, step, tip, showPipeline: true };
+        }
+
+        if (state === 'error') {
+            step = { badge: 'badge-error', icon: 'bi-exclamation-triangle', text: 'Error', sub: torrent.last_error || '' };
+            tip = torrent.last_error || '';
+            if (providerStatus === 'error') provider.mode = 'error';
+            return { provider, local, activeLeg, step, tip, showPipeline: false };
+        }
+
+        if (state === 'pending') {
+            step = {
+                badge: 'badge-warning',
+                icon: 'bi-clock-history',
+                text: 'Backlog',
+                sub: torrent.pending_reason || 'Waiting for provider slot',
+            };
+            tip = torrent.pending_reason || '';
+            provider.mode = 'waiting';
+            local.mode = 'waiting';
+            return { provider, local, activeLeg, step, tip, showPipeline: false };
+        }
+
+        if (state === 'queued' || phase === 'queued') {
+            step = { badge: 'badge-ghost', icon: 'bi-hourglass-split', text: 'Queued', sub: 'Not yet on provider' };
+            provider.mode = 'queued';
+            local.mode = 'waiting';
+            return { provider, local, activeLeg, step, tip, showPipeline: true };
+        }
+
+        if (state === 'paused' || state === 'pausedDL') {
+            step = { badge: 'badge-warning', icon: 'bi-pause-circle', text: 'Paused', sub: '' };
+            return { provider, local, activeLeg, step, tip, showPipeline: true };
+        }
+
+        const providerReady = debridPct >= 100 || providerStatus === 'downloaded';
+
+        if (phase === 'debrid_fetching' || (!providerReady && phase !== 'downloading' && phase !== 'importing')) {
+            provider.mode = 'fetching';
+            provider.active = true;
+            activeLeg = 'provider';
+            local.mode = 'waiting';
+            step = {
+                badge: 'badge-info',
+                icon: 'bi-cloud-arrow-down',
+                text: 'Provider cache',
+                sub: providerStatus ? `Provider: ${providerStatus}` : 'Caching on debrid',
+            };
+            tip = `Provider is fetching (${debridPct}%)`;
+            return { provider, local, activeLeg, step, tip, showPipeline: true };
+        }
+
+        if (phase === 'importing') {
+            provider.mode = 'done';
+            provider.pct = 100;
+            local.mode = 'importing';
+            local.active = true;
+            activeLeg = 'import';
+            const linkLabel = action === 'strm' ? 'STRM files' : 'Symlinks';
+            step = {
+                badge: 'badge-secondary',
+                icon: 'bi-folder-symlink',
+                text: 'Linking',
+                sub: `Creating ${linkLabel}`,
+            };
+            tip = `Creating ${linkLabel} on disk`;
+            return { provider, local, activeLeg, step, tip, showPipeline: true };
+        }
+
+        if (needsLocalPull) {
+            provider.mode = 'done';
+            provider.pct = Math.max(debridPct, 100);
+            if (torrent.is_downloading || localPct > 0) {
+                local.mode = 'pulling';
+                local.active = true;
+                activeLeg = 'local';
+                step = {
+                    badge: 'badge-secondary',
+                    icon: 'bi-hdd-network',
+                    text: 'Local pull',
+                    sub: 'Decypharr → your storage',
+                };
+                tip = `Pulling from provider to server (${localPct}%)`;
+            } else if (providerReady) {
+                local.mode = 'waiting';
+                activeLeg = 'local';
+                step = {
+                    badge: 'badge-info badge-outline',
+                    icon: 'bi-hourglass',
+                    text: 'Awaiting pull',
+                    sub: 'Provider ready · starting local copy',
+                };
+                tip = 'Provider cache complete; local pull is starting';
+            } else {
+                local.mode = 'waiting';
+                step = {
+                    badge: 'badge-info',
+                    icon: 'bi-cloud-arrow-down',
+                    text: 'Provider cache',
+                    sub: 'Finishing provider download',
+                };
+            }
+            return { provider, local, activeLeg, step, tip, showPipeline: true };
+        }
+
+        if (needsLinking) {
+            provider.mode = 'done';
+            provider.pct = 100;
+            local.mode = providerReady ? 'linking' : 'waiting';
+            local.active = providerReady;
+            activeLeg = providerReady ? 'import' : 'provider';
+            step = {
+                badge: providerReady ? 'badge-secondary' : 'badge-info',
+                icon: providerReady ? 'bi-folder-symlink' : 'bi-cloud-arrow-down',
+                text: providerReady ? 'Linking' : 'Provider cache',
+                sub: providerReady
+                    ? (action === 'strm' ? 'Will create STRM files' : 'Will create symlinks')
+                    : 'Caching on provider',
+            };
+            tip = providerReady ? 'Preparing symlinks/STRM on disk' : `Provider cache (${debridPct}%)`;
+            return { provider, local, activeLeg, step, tip, showPipeline: true };
+        }
+
+        // none / unknown action: provider-only lifecycle
+        provider.mode = providerReady ? 'done' : 'fetching';
+        provider.active = !providerReady;
+        activeLeg = provider.active ? 'provider' : null;
+        local.mode = 'skip';
+        step = {
+            badge: providerReady ? 'badge-success' : 'badge-info',
+            icon: providerReady ? 'bi-cloud-check' : 'bi-cloud-arrow-down',
+            text: providerReady ? 'Provider ready' : 'Provider cache',
+            sub: action === 'none' ? 'No local action' : '',
+        };
+        return { provider, local, activeLeg, step, tip, showPipeline: true };
+    }
+
     renderStatusCell(torrent) {
-        const stateMap = {
-            'pausedUP': { class: 'badge-success', text: 'Completed', icon: 'bi-check-circle' },
-            'downloading': { class: 'badge-info', text: 'Downloading', icon: 'bi-arrow-down-circle' },
-            'error': { class: 'badge-error', text: 'Error', icon: 'bi-exclamation-triangle' },
-            'queued': { class: 'badge-ghost', text: 'Queued', icon: 'bi-hourglass-split' },
-            'paused': { class: 'badge-warning', text: 'Paused', icon: 'bi-pause-circle' },
-            'pending': { class: 'badge-warning', text: 'Pending', icon: 'bi-clock-history' }
-        };
-        const s = stateMap[torrent.state] || { class: 'badge-ghost', text: torrent.state || 'unknown', icon: 'bi-question' };
-        const phaseLabels = {
-            queued: 'Queued',
-            debrid_fetching: 'Provider',
-            downloading: 'Local pull',
-            importing: 'Importing',
-            complete: 'Complete'
-        };
-        const phase = torrent.phase ? (phaseLabels[torrent.phase] || torrent.phase) : '';
-        const reason = torrent.pending_reason || torrent.last_error || torrent.state || '';
+        const pipe = this.derivePipeline(torrent);
+        const tip = pipe.tip || torrent.pending_reason || torrent.last_error || pipe.step.sub || '';
+        const sub = pipe.step.sub
+            ? `<span class="step-cell-sub block truncate max-w-[11rem]">${this.escapeHtml(pipe.step.sub)}</span>`
+            : '';
         return `
-            <div class="tooltip tooltip-left" data-tip="${this.escapeAttr(reason)}">
-                <span class="badge ${s.class} badge-sm gap-1"><i class="bi ${s.icon}"></i>${s.text}</span>
-                ${phase ? `<span class="text-[10px] block opacity-60 mt-0.5">${this.escapeHtml(phase)}</span>` : ''}
-                ${torrent.state === 'pending' && torrent.pending_reason ? `<span class="text-[10px] block opacity-60 mt-0.5">${this.escapeHtml(torrent.pending_reason)}</span>` : ''}
+            <div class="tooltip tooltip-left" data-tip="${this.escapeAttr(tip)}">
+                <span class="badge ${pipe.step.badge} badge-sm gap-1">
+                    <i class="bi ${pipe.step.icon}"></i>${this.escapeHtml(pipe.step.text)}
+                </span>
+                ${sub}
             </div>
         `;
     }
@@ -539,13 +695,64 @@ class TorrentDashboard {
         if (!phase) return '<span class="text-xs opacity-50">—</span>';
         const labels = {
             queued: 'Queued',
-            debrid_fetching: 'Debrid',
-            downloading: 'Pulling',
-            importing: 'Import',
+            debrid_fetching: 'Provider',
+            downloading: 'Local',
+            importing: 'Link',
             complete: 'Done',
         };
         const text = labels[phase] || phase;
         return `<span class="badge badge-outline badge-xs" title="${this.escapeAttr(phase)}">${text}</span>`;
+    }
+
+    renderPipelineTrack(leg, torrent) {
+        const labels = {
+            provider: 'Provider',
+            local: 'Decypharr',
+        };
+        const modeClass = {
+            fetching: 'pipeline-track--active',
+            pulling: 'pipeline-track--active',
+            importing: 'pipeline-track--active',
+            linking: 'pipeline-track--active',
+            done: 'pipeline-track--done',
+            waiting: 'pipeline-track--waiting',
+            queued: 'pipeline-track--waiting',
+            skip: 'pipeline-track--skip',
+            error: 'pipeline-track--waiting',
+        };
+        const progressClass = {
+            fetching: 'progress-info',
+            pulling: 'progress-secondary',
+            importing: 'progress-accent',
+            linking: 'progress-accent',
+            done: 'progress-success',
+            waiting: 'progress-ghost',
+            queued: 'progress-ghost',
+            skip: 'progress-ghost',
+            error: 'progress-error',
+        };
+        const label = labels[leg.key] || leg.key;
+        const cls = modeClass[leg.mode] || '';
+        const barCls = progressClass[leg.mode] || 'progress-ghost';
+        let pct = leg.pct;
+        let pctLabel = `${pct}%`;
+        if (leg.mode === 'skip') {
+            pct = 0;
+            pctLabel = '—';
+        } else if (leg.mode === 'waiting' && pct === 0) {
+            pctLabel = '…';
+        } else if (leg.mode === 'done' && pct < 100) {
+            pct = 100;
+            pctLabel = '100%';
+        }
+        const barValue = leg.mode === 'skip' ? 0 : Math.min(100, Math.max(0, pct));
+        return `
+            <div class="pipeline-track ${cls}">
+                <span class="pipeline-track-label">${label}</span>
+                <progress class="progress ${barCls}" value="${barValue}" max="100"></progress>
+                <span class="pipeline-track-pct">${pctLabel}</span>
+            </div>
+        `;
     }
 
     renderProgressCell(torrent) {
@@ -553,44 +760,46 @@ class TorrentDashboard {
         if (state === 'error') {
             return `<span class="text-xs opacity-60">—</span>`;
         }
-        if (state === 'pausedUP') {
-            return `
-                <div class="flex items-center gap-2">
-                    <progress class="progress progress-success w-20" value="100" max="100"></progress>
-                    <span class="text-xs font-medium">100%</span>
-                </div>
-            `;
-        }
-        const hasSplit = (torrent.debrid_progress > 0 || torrent.local_progress > 0) &&
-            (torrent.debrid_progress < 1 || torrent.local_progress < 1);
-        if (hasSplit) {
-            const debridPct = Math.round((torrent.debrid_progress || 0) * 100);
-            const localPct = Math.round((torrent.local_progress || 0) * 100);
-            const overall = Math.round((torrent.progress || 0) * 100);
-            return `
-                <div class="tooltip tooltip-top" data-tip="Debrid ${debridPct}% · Local ${localPct}% · Overall ${overall}%">
-                    <div class="flex flex-col gap-0.5 w-24">
-                        <div class="flex items-center gap-1">
-                            <span class="text-[10px] w-8 opacity-60">D</span>
-                            <progress class="progress progress-info h-1.5 flex-1" value="${debridPct}" max="100"></progress>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <span class="text-[10px] w-8 opacity-60">L</span>
-                            <progress class="progress progress-secondary h-1.5 flex-1" value="${localPct}" max="100"></progress>
-                        </div>
-                        <span class="text-xs font-medium text-center">${overall}%</span>
+        const pipe = this.derivePipeline(torrent);
+        if (!pipe.showPipeline) {
+            if (state === 'pausedUP') {
+                return `
+                    <div class="flex items-center gap-2">
+                        <progress class="progress progress-success w-20" value="100" max="100"></progress>
+                        <span class="text-xs font-medium">100%</span>
                     </div>
-                </div>
-            `;
+                `;
+            }
+            return this.renderProgressBar(torrent.progress);
         }
-        return this.renderProgressBar(torrent.progress);
+        const overall = Math.round((torrent.progress || 0) * 100);
+        const tip = pipe.tip || `Provider ${pipe.provider.pct}% · Decypharr ${pipe.local.pct}% · Overall ${overall}%`;
+        return `
+            <div class="tooltip tooltip-top pipeline-cell" data-tip="${this.escapeAttr(tip)}">
+                <div class="pipeline-tracks">
+                    ${this.renderPipelineTrack(pipe.provider, torrent)}
+                    ${this.renderPipelineTrack(pipe.local, torrent)}
+                </div>
+                <div class="pipeline-overall">Overall ${overall}%</div>
+            </div>
+        `;
     }
 
     renderSpeed(torrent) {
-        if (torrent.state !== 'downloading') return '—';
+        const pipe = this.derivePipeline(torrent);
         const bps = torrent.speed ?? torrent.dlspeed;
-        if (!bps) return '—';
-        return this.formatSpeed(bps);
+        if (!bps || torrent.state === 'pausedUP' || torrent.state === 'error' || torrent.state === 'pending') {
+            return '—';
+        }
+        const legLabels = {
+            provider: { icon: 'bi-cloud', text: 'Provider' },
+            local: { icon: 'bi-hdd-network', text: 'Decypharr' },
+            import: { icon: 'bi-folder-symlink', text: 'Link' },
+        };
+        const leg = pipe.activeLeg && legLabels[pipe.activeLeg]
+            ? `<span class="speed-leg"><i class="bi ${legLabels[pipe.activeLeg].icon}"></i>${legLabels[pipe.activeLeg].text}</span>`
+            : '';
+        return `${leg}<span class="text-sm font-mono whitespace-nowrap">${this.formatSpeed(bps)}</span>`;
     }
 
     renderProgressBar(progress) {

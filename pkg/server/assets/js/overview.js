@@ -67,6 +67,10 @@ class OverviewPage {
             grid: { borderColor: 'rgba(127,127,127,0.15)' },
         });
         this.chart.render();
+        this._resizeHandler = () => {
+            if (this.chart) this.chart.resize();
+        };
+        window.addEventListener('resize', this._resizeHandler);
     }
 
     async refresh() {
@@ -190,15 +194,26 @@ class OverviewPage {
             return;
         }
         this.refs.activeStrip.innerHTML = top.map(t => {
-            const slug = window.providerSlug(t.debrid);
-            const color = window.providerColor(t.debrid);
+            const provider = t.debrid || t.active_provider || '';
+            const slug = window.providerSlug(provider);
+            const color = window.providerColor(provider);
             const speed = t.dlspeed || t.speed || 0;
             const pct = Math.round((t.progress || 0) * 100);
+            const phaseHint = {
+                debrid_fetching: 'Provider cache',
+                downloading: t.action === 'download' ? 'Local pull' : 'Post-process',
+                importing: 'Linking',
+            }[t.phase] || '';
+            const meta = [
+                provider ? window.decypharrUtils.escapeHtml(provider) : '',
+                phaseHint,
+                `${pct}%`,
+            ].filter(Boolean).join(' · ');
             return `
                 <div class="active-strip-row" data-prov="${slug}" style="--prov-color:${color}">
                     <div>
                         <div class="active-strip-name">${window.decypharrUtils.escapeHtml(t.name)}</div>
-                        <div class="text-xs opacity-60">${window.decypharrUtils.escapeHtml(t.debrid || 'unknown')} · ${pct}%</div>
+                        <div class="text-xs opacity-60">${meta}</div>
                     </div>
                     <div class="text-xs font-mono">${speed > 0 ? window.decypharrUtils.formatBytes(speed) + '/s' : '—'}</div>
                     <progress class="progress progress-info w-20" value="${pct}" max="100"></progress>

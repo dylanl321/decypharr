@@ -396,10 +396,10 @@ class FileBrowser {
                     <td>
                         ${entry.size <= 0 ? '-' : this.formatSize(entry.size)}
                     </td>
-                    <td class="text-xs text-base-content/70">
+                    <td class="text-xs text-base-content/70 hidden md:table-cell">
                         ${entry.mod_time || '-'}
                     </td>
-                    <td>
+                    <td class="hidden md:table-cell">
                         ${entry.active_debrid ? `<span>${this.escapeHtml(entry.active_debrid)}</span>` : '-'}
                     </td>
                     <td data-health-cell="${this.escapeAttr(entry.name)}">

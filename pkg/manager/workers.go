@@ -10,7 +10,6 @@ import (
 	"github.com/sirrobot01/decypharr/internal/config"
 	"github.com/sirrobot01/decypharr/internal/utils"
 	debrid "github.com/sirrobot01/decypharr/pkg/debrid/common"
-	debridTypes "github.com/sirrobot01/decypharr/pkg/debrid/types"
 	"github.com/sirrobot01/decypharr/pkg/storage"
 )
 
@@ -331,54 +330,6 @@ func (m *Manager) retryPendingEntry(ctx context.Context, entry *storage.Entry) {
 		Int("attempt", entry.PendingAttempts+1).
 		Msg("Retrying pending entry")
 
-	// Increment attempt counter
-	entry.PendingAttempts++
-	now := time.Now()
-	entry.LastAttemptAt = &now
-	entry.UpdatedAt = now
-	_ = m.queue.Update(entry)
-
-	// Reconstruct ImportRequest from entry
-	var importReq *ImportRequest
-	if entry.IsTorrent() {
-		magnet, err := utils.GetMagnetInfo(entry.Magnet, m.config.AlwaysRmTrackerUrls)
-		if err != nil {
-			magnet = utils.ConstructMagnet(entry.InfoHash, entry.Name)
-		}
-		arr := m.arr.GetOrCreate(entry.Category)
-		importReq = NewTorrentRequest(
-			"", // Let SendToDebrid choose based on config
-			entry.SavePath,
-			magnet,
-			arr,
-			entry.Action,
-			&entry.DownloadUncached,
-			entry.CallbackURL,
-			ImportTypeAPI,
-			entry.SkipMultiSeason,
-		)
-	} else if entry.IsNZB() {
-		// Reconstruct NZB import request from stored content
-		if entry.NZBContent == nil || len(entry.NZBContent) == 0 {
-			m.logger.Error().Str("hash", entry.InfoHash).Msg("Cannot retry NZB pending entry: NZB content not stored")
-			entry.MarkAsError(fmt.Errorf("cannot retry: NZB content not available"))
-			_ = m.queue.Update(entry)
-			return
-		}
-		arr := m.arr.GetOrCreate(entry.Category)
-		importReq = NewNZBRequest(
-			entry.Name,
-			entry.SavePath,
-			entry.NZBContent,
-			arr,
-			entry.Action,
-			entry.CallbackURL,
-			ImportTypeAPI,
-			entry.SkipMultiSeason,
-		)
-	}
-
-	// Filter out blocked providers
 	if len(entry.BlockedProviders) > 0 {
 		m.logger.Debug().
 			Str("hash", entry.InfoHash).
@@ -386,86 +337,5 @@ func (m *Manager) retryPendingEntry(ctx context.Context, entry *storage.Entry) {
 			Msg("Skipping blocked providers for this entry")
 	}
 
-	// Try to submit based on protocol
-	var debridTorrent *debridTypes.Torrent
-	var err error
-
-	if entry.IsNZB() {
-		// For NZB, call AddNewNZB which handles the submission
-		hash, submitErr := m.AddNewNZB(ctx, importReq)
-		if submitErr != nil {
-			err = submitErr
-		} else {
-			// Successfully submitted NZB - remove the pending entry since AddNewNZB creates a new one
-			m.logger.Info().
-				Str("hash", entry.InfoHash).
-				Str("new_hash", hash).
-				Msg("Pending NZB entry successfully resubmitted")
-			_ = m.queue.Delete(entry.InfoHash, nil)
-			return
-		}
-	} else {
-		// For torrents, use SendToDebrid
-		debridTorrent, err = m.SendToDebrid(ctx, importReq)
-	}
-	if err != nil {
-		// Check if still retryable
-		reason, shouldPend := m.classifySubmitError(err, importReq)
-		if !shouldPend {
-			// Permanent failure
-			m.logger.Error().Err(err).Str("hash", entry.InfoHash).Msg("Pending entry failed permanently")
-			entry.MarkAsError(fmt.Errorf("permanent failure: %w", err))
-			_ = m.queue.Update(entry)
-			return
-		}
-
-		// Update blocked providers list
-		for _, attempt := range importReq.SubmitAttempts {
-			if attempt.Code == "content_blocked" || attempt.Code == "dmca_blocked" {
-				// Add to blocked list if not already there
-				found := false
-				for _, blocked := range entry.BlockedProviders {
-					if blocked == attempt.Provider {
-						found = true
-						break
-					}
-				}
-				if !found {
-					entry.BlockedProviders = append(entry.BlockedProviders, attempt.Provider)
-				}
-			}
-		}
-
-		// Update reason and continue pending
-		entry.PendingReason = reason
-		entry.UpdatedAt = time.Now()
-		entry.AppendEvent(storage.TimelinePendingRetryFailed, "", fmt.Sprintf("Retry #%d failed: %s", entry.PendingAttempts, reason))
-		_ = m.queue.Update(entry)
-		m.logger.Debug().
-			Str("hash", entry.InfoHash).
-			Int("attempt", entry.PendingAttempts).
-			Str("reason", reason).
-			Msg("Pending entry retry failed, will retry later")
-		return
-	}
-
-	// Success! Promote to downloading
-	m.logger.Info().
-		Str("hash", entry.InfoHash).
-		Str("provider", debridTorrent.Debrid).
-		Msg("Pending entry successfully submitted")
-
-	// Update entry to downloading state
-	entry.State = storage.EntryStateDownloading
-	entry.Phase = storage.DownloadPhaseDebridFetching
-	entry.Status = debridTorrent.Status
-	entry.ActiveProvider = debridTorrent.Debrid
-	entry.PendingReason = ""
-	entry.UpdatedAt = time.Now()
-	entry.AppendEvent(storage.TimelinePendingPromoted, debridTorrent.Debrid, fmt.Sprintf("Provider available after %d attempts", entry.PendingAttempts))
-	entry.AppendEvent(storage.TimelineDebridSubmitted, debridTorrent.Debrid, "")
-
-	// Process same as AddNewTorrent would
-	_ = m.queue.Update(entry)
-	go m.processNewTorrent(entry, debridTorrent)
+	m.submitPendingEntry(ctx, entry)
 }

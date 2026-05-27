@@ -66,6 +66,7 @@
     <!-- File Browser Table -->
     <div class="card bg-base-100 shadow-xl">
         <div class="card-body p-0">
+            <div class="overflow-x-auto">
             <table class="table table-hover">
                 <thead class="bg-base-200">
                 <tr>
@@ -93,7 +94,7 @@
                             <i class="bi bi-arrow-down-up text-xs" id="sortIndicator-size"></i>
                         </button>
                     </th>
-                    <th class="font-semibold">
+                    <th class="font-semibold hidden md:table-cell">
                         <button type="button"
                                 class="inline-flex items-center gap-1 hover:text-primary transition-colors"
                                 data-sort-key="mod_time">
@@ -101,7 +102,7 @@
                             <i class="bi bi-arrow-down-up text-xs" id="sortIndicator-mod_time"></i>
                         </button>
                     </th>
-                    <th class="font-semibold">
+                    <th class="font-semibold hidden md:table-cell">
                         <button type="button"
                                 class="inline-flex items-center gap-1 hover:text-primary transition-colors"
                                 data-sort-key="active_debrid">
@@ -119,6 +120,7 @@
                 <!-- Files will be loaded here -->
                 </tbody>
             </table>
+            </div>
 
             <div class="flex flex-col sm:flex-row justify-between items-center p-6 border-t border-base-200 gap-4">
                 <div class="text-sm text-base-content/70">

@@ -1038,6 +1038,12 @@ class StatsPage {
         
                 // Initial load
                 loadStats();
+
+                window.addEventListener('resize', () => {
+                    document.querySelectorAll('[id^="provChart-"]').forEach(el => {
+                        if (el.__apex) el.__apex.resize();
+                    });
+                });
             
     }
 }

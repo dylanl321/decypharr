@@ -132,6 +132,8 @@ func (s *Server) handleRetryQueueItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		s.manager.SchedulePendingSubmit(hash)
+
 		utils.JSONResponse(w, map[string]string{"status": "retry_scheduled"}, http.StatusOK)
 		return
 	}

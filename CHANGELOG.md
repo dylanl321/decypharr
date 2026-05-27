@@ -4,11 +4,25 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap**, 
 
 ## [Unreleased]
 
+### Changed
+
+#### *arr add endpoints return before debrid submit
+
+- **qBittorrent `torrents/add` and SABnzbd `addfile`:** Grabs from Sonarr/Radarr are persisted as `pending` and the HTTP response returns immediately; debrid submission runs in a background goroutine (with deduped `schedulePendingSubmit` and the existing `processPendingEntries` retry worker). Fixes *arr clients hanging on the add request while slot checks and multi-provider submits completed synchronously.
+- **Web UI `/api` add** and the in-memory import queue still use synchronous submit so errors surface in the UI response.
+
+#### Web UI responsive scaling
+
+- **Small screens:** Browse table scroll wrapper; Download torrent/NZB fields stack below `md`; Stats provider grid uses fluid `minmax` instead of 360px; Stats/Health page headers stack; Stats tabs scroll with icon-only labels on narrow viewports; Config sub-nav tabs scroll at 640px; Queue/Browse/Repair tables hide low-priority columns on `md`/`lg`; Overview active-download strip stacks on phones.
+- **Large screens:** Optional `app-content-wide` (1920px) on Overview, Queue, Browse, and Stats; Settings form grids expand to 3–4 columns on `xl`/`2xl`; provider card grids use wider minima on `2xl`.
+- **Charts:** ApexCharts on Overview and Stats resize on window `resize`.
+- **Queue pipeline UI:** Queue table **Step** and **Pipeline** columns distinguish provider caching from Decypharr local pull (dual progress tracks, active-leg speed label, intermediate steps such as “Awaiting pull” and “Linking”). Full history remains in the timeline drawer.
+
 ### Added
 
 #### Backlog queue: accept-then-process architecture
 
-- **Always accept grabs:** qBittorrent `torrents/add` and SABnzbd `addfile` endpoints now always return success (200 OK) for all grabs from Sonarr/Radarr, even when providers are unavailable (slots exhausted, DMCA blocked, rate-limited). Previously these failures caused *arr apps to retry every 12s in a tight loop.
+- **Always accept grabs:** qBittorrent `torrents/add` and SABnzbd `addfile` endpoints return success (200 OK) immediately and queue debrid work in the background; retryable provider failures update the pending entry instead of failing the HTTP add. Previously these failures caused *arr apps to retry every 12s in a tight loop.
 - **Pending state:** New `EntryStatePending` with sub-states tracked in `PendingReason` field: `slot_exhausted` (all providers at slot limit), `provider_blocked` (all providers returned DMCA/451 for this hash), `rate_limited` (all providers rate-limited), `no_eligible_provider` (no provider supports this protocol).
 - **Per-entry DMCA blocklist:** New `BlockedProviders []string` field tracks which providers returned HTTP 451 for a specific hash. Background retry worker skips these providers for that entry while still trying them for others—this is NOT a global blocklist.
 - **Background retry worker:** `processPendingEntries()` runs every 30s (configurable via `pending_retry_interval_seconds`), retrying pending entries with exponential backoff (`min(30s * 2^attempts, 15min)`, capped by `pending_max_retry_interval_seconds`). Entries pending longer than `max_pending_hours` (default 6h) are marked as error so *arr apps can re-grab a different release.

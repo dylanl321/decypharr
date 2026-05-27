@@ -1,9 +1,7 @@
 ﻿{{ define "stats" }}
-<div class="container mx-auto">
-    <div class="flex items-center justify-between mb-6">
-        <div class="flex items-center gap-3">
-            <h1 class="text-3xl font-bold text-primary">System Statistics</h1>
-        </div>
+<div class="space-y-6">
+    <div class="page-header">
+        <h1 class="text-2xl sm:text-3xl font-bold text-primary">System Statistics</h1>
         <button id="refresh-stats" class="btn btn-outline btn-sm">
             <i class="bi bi-arrow-clockwise"></i>
             Refresh
@@ -17,23 +15,25 @@
 
     <div id="stats-content" style="display: none;">
         <!-- Tab Navigation -->
-        <div role="tablist" class="tabs tabs-boxed mb-6">
+        <div class="tabs-scroll mb-6">
+        <div role="tablist" class="tabs tabs-boxed flex-nowrap w-max min-w-full">
             <a role="tab" class="tab tab-active" data-tab="providers">
-                <i class="bi bi-collection mr-2"></i>Providers
+                <i class="bi bi-collection mr-2"></i><span class="hidden sm:inline">Providers</span>
             </a>
             <a role="tab" class="tab" data-tab="overview">
-                <i class="bi bi-speedometer2 mr-2"></i>System
+                <i class="bi bi-speedometer2 mr-2"></i><span class="hidden sm:inline">System</span>
             </a>
             <a role="tab" class="tab" data-tab="streams">
-                <i class="bi bi-broadcast mr-2"></i>Streams
+                <i class="bi bi-broadcast mr-2"></i><span class="hidden sm:inline">Streams</span>
                 <span class="badge badge-sm ml-2" id="streams-tab-count">0</span>
             </a>
             <a role="tab" class="tab" data-tab="mount">
-                <i class="bi bi-hdd-stack mr-2"></i>Mount
+                <i class="bi bi-hdd-stack mr-2"></i><span class="hidden sm:inline">Mount</span>
             </a>
             <a role="tab" class="tab" data-tab="ingests">
-                <i class="bi bi-cloud-upload mr-2"></i>Ingests
+                <i class="bi bi-cloud-upload mr-2"></i><span class="hidden sm:inline">Ingests</span>
             </a>
+        </div>
         </div>
 
         <!-- Providers Tab (now default) -->
@@ -62,8 +62,7 @@
                 </div>
             </div>
 
-            <div id="providers-grid" class="grid gap-4"
-                 style="grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));">
+            <div id="providers-grid" class="providers-grid">
                 <div class="provider-card opacity-60">
                     <div class="kpi-label">Loading providers…</div>
                 </div>

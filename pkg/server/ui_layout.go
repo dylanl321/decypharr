@@ -72,6 +72,15 @@ func showAppNav(page string) bool {
 	}
 }
 
+func contentWideFor(page string) bool {
+	switch page {
+	case "overview", "index", "browse", "stats":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Server) sessionUsername(r *http.Request) string {
 	if r == nil {
 		return ""
@@ -112,6 +121,7 @@ func (s *Server) layoutData(r *http.Request, page, title string, extra map[strin
 		"Username":     s.sessionUsername(r),
 		"ShowLogout":   s.showLogout(r),
 		"ShowAuthPage": page == "login" || page == "register",
+		"ContentWide":  contentWideFor(page),
 	}
 	for k, v := range extra {
 		data[k] = v

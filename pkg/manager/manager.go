@@ -80,6 +80,7 @@ type Manager struct {
 	// duplicate goroutines from processing the same entry when the scheduler
 	// re-fires before the previous pass has updated the queue row.
 	processingEntries *xsync.Map[string, struct{}]
+	pendingSubmits    *xsync.Map[string, struct{}]
 
 	// NZB processing worker pool (unbounded queue)
 	nzbQueue      *nzbJobQueue
@@ -156,6 +157,7 @@ func New() *Manager {
 		debridSpeedTestResults: xsync.NewMap[string, debridTypes.SpeedTestResult](),
 		activeStreams:          xsync.NewMap[string, *ActiveStream](),
 		processingEntries:      xsync.NewMap[string, struct{}](),
+		pendingSubmits:         xsync.NewMap[string, struct{}](),
 		bandwidth:              newBandwidthController(cfg),
 	}
 
@@ -663,5 +665,5 @@ func (m *Manager) processFromQueue(ctx context.Context) error {
 	if importReq == nil {
 		return nil
 	}
-	return m.AddNewTorrent(ctx, importReq)
+	return m.submitTorrentImport(ctx, importReq)
 }

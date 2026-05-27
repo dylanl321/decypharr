@@ -98,6 +98,14 @@ message EntryProto {
   string phase = 40;
   double debrid_progress = 41;
   double local_progress = 42;
+
+  // Pending queue (accept-then-process backlog)
+  string pending_reason = 43;
+  int32 pending_attempts = 44;
+  int64 last_attempt_at_unix = 45;
+  bool has_last_attempt_at = 46;
+  repeated string blocked_providers = 47;
+  bytes nzb_content = 48;
 }
 
 // ============================================================================

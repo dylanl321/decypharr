@@ -169,6 +169,15 @@ func EntryToProto(e *Entry) *EntryProto {
 		Phase:            e.Phase,
 		DebridProgress:   e.DebridProgress,
 		LocalProgress:    e.LocalProgress,
+		PendingReason:    e.PendingReason,
+		PendingAttempts:  int32(e.PendingAttempts),
+		BlockedProviders: e.BlockedProviders,
+		NzbContent:       e.NZBContent,
+	}
+
+	if e.LastAttemptAt != nil {
+		pb.HasLastAttemptAt = true
+		pb.LastAttemptAtUnix = e.LastAttemptAt.Unix()
 	}
 
 	// Timestamps
@@ -240,6 +249,15 @@ func ProtoToEntry(pb *EntryProto) *Entry {
 		Phase:            pb.Phase,
 		DebridProgress:   pb.DebridProgress,
 		LocalProgress:    pb.LocalProgress,
+		PendingReason:    pb.PendingReason,
+		PendingAttempts:  int(pb.PendingAttempts),
+		BlockedProviders: pb.BlockedProviders,
+		NZBContent:       pb.NzbContent,
+	}
+
+	if pb.HasLastAttemptAt {
+		t := time.Unix(pb.LastAttemptAtUnix, 0)
+		e.LastAttemptAt = &t
 	}
 
 	// Timestamps

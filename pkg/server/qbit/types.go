@@ -408,7 +408,7 @@ func convertToQBitTorrentTorrent(t *storage.Entry) Torrent {
 	if state == storage.EntryStatePending {
 		// Map pending reasons to appropriate qBit states
 		switch t.PendingReason {
-		case "slot_exhausted", "provider_blocked":
+		case "slot_exhausted", "provider_blocked", "accepted":
 			state = "stalledDL" // Stalled download - waiting
 		case "rate_limited":
 			state = "metaDL" // Fetching metadata

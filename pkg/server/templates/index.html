@@ -124,23 +124,23 @@
                         <th class="font-semibold sortable-th" data-sort="name">
                             <span class="th-content"><i class="bi bi-file-text mr-2"></i>Name<i class="sort-indicator bi"></i></span>
                         </th>
-                        <th class="font-semibold sortable-th" data-sort="provider">
+                        <th class="font-semibold sortable-th hidden md:table-cell" data-sort="provider">
                             <span class="th-content"><i class="bi bi-cloud mr-2"></i>Provider<i class="sort-indicator bi"></i></span>
                         </th>
                         <th class="font-semibold sortable-th" data-sort="size">
                             <span class="th-content"><i class="bi bi-hdd mr-2"></i>Size<i class="sort-indicator bi"></i></span>
                         </th>
                         <th class="font-semibold sortable-th" data-sort="progress">
-                            <span class="th-content"><i class="bi bi-speedometer2 mr-2"></i>Progress<i class="sort-indicator bi"></i></span>
+                            <span class="th-content" title="Provider cache vs Decypharr local pull"><i class="bi bi-layers mr-2"></i>Pipeline<i class="sort-indicator bi"></i></span>
                         </th>
-                        <th class="font-semibold sortable-th" data-sort="speed">
-                            <span class="th-content"><i class="bi bi-download mr-2"></i>Speed<i class="sort-indicator bi"></i></span>
+                        <th class="font-semibold sortable-th hidden lg:table-cell" data-sort="speed">
+                            <span class="th-content" title="Throughput on the active pipeline leg"><i class="bi bi-download mr-2"></i>Speed<i class="sort-indicator bi"></i></span>
                         </th>
-                        <th class="font-semibold sortable-th" data-sort="category">
+                        <th class="font-semibold sortable-th hidden md:table-cell" data-sort="category">
                             <span class="th-content"><i class="bi bi-tag mr-2"></i>Category<i class="sort-indicator bi"></i></span>
                         </th>
                         <th class="font-semibold sortable-th" data-sort="state">
-                            <span class="th-content"><i class="bi bi-activity mr-2"></i>Status<i class="sort-indicator bi"></i></span>
+                            <span class="th-content" title="Current step in the download pipeline"><i class="bi bi-signpost-split mr-2"></i>Step<i class="sort-indicator bi"></i></span>
                         </th>
                         <th class="font-semibold w-32">Actions</th>
                     </tr>

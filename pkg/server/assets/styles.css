@@ -537,13 +537,17 @@
         font-size: 16px;
     }
 
-    nav[aria-label="Configuration Tabs"] {
+    nav[aria-label="Configuration Tabs"],
+    nav[aria-label="Provider Type Tabs"],
+    nav[aria-label="Mount Type Tabs"] {
         overflow-x: auto;
         white-space: nowrap;
         padding-bottom: 8px;
     }
 
-    nav[aria-label="Configuration Tabs"]::-webkit-scrollbar {
+    nav[aria-label="Configuration Tabs"]::-webkit-scrollbar,
+    nav[aria-label="Provider Type Tabs"]::-webkit-scrollbar,
+    nav[aria-label="Mount Type Tabs"]::-webkit-scrollbar {
         height: 4px;
     }
 
@@ -871,6 +875,13 @@ nav[aria-label="Configuration Tabs"] {
 .app-content-bare {
     padding: 0;
     max-width: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.app-content-wide {
+    max-width: min(100%, 1920px);
 }
 
 .app-content-inner {
@@ -940,6 +951,54 @@ html.sidebar-collapsed .app-main {
     }
     .app-content {
         padding: 1rem;
+    }
+}
+
+@media (min-width: 1536px) {
+    .app-content-wide {
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+}
+
+/* =====================================================================
+   Responsive utilities
+   ===================================================================== */
+
+.page-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+@media (min-width: 640px) {
+    .page-header {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+}
+
+.tabs-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.5rem;
+}
+
+.tabs-scroll::-webkit-scrollbar {
+    height: 4px;
+}
+
+.providers-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+
+@media (min-width: 1536px) {
+    .providers-grid {
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     }
 }
 
@@ -1013,6 +1072,82 @@ html.sidebar-collapsed .app-main {
 .size-cell {
     min-width: 6.5rem;
     white-space: nowrap;
+}
+
+/* Queue pipeline: provider cache vs local pull */
+.pipeline-cell {
+    min-width: 7.5rem;
+}
+
+.pipeline-tracks {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.pipeline-track {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.65rem;
+    line-height: 1.2;
+}
+
+.pipeline-track-label {
+    width: 3.25rem;
+    flex-shrink: 0;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: hsl(var(--bc) / 0.55);
+}
+
+.pipeline-track--active .pipeline-track-label {
+    color: hsl(var(--p));
+}
+
+.pipeline-track--done .pipeline-track-label {
+    color: hsl(var(--su));
+}
+
+.pipeline-track--waiting .pipeline-track-label,
+.pipeline-track--skip .pipeline-track-label {
+    color: hsl(var(--bc) / 0.4);
+}
+
+.pipeline-track progress {
+    height: 0.35rem;
+    flex: 1;
+    min-width: 3rem;
+}
+
+.pipeline-track-pct {
+    width: 2rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: hsl(var(--bc) / 0.7);
+}
+
+.pipeline-overall {
+    font-size: 0.7rem;
+    text-align: center;
+    color: hsl(var(--bc) / 0.65);
+    margin-top: 0.1rem;
+}
+
+.step-cell-sub {
+    font-size: 0.65rem;
+    color: hsl(var(--bc) / 0.55);
+    margin-top: 0.2rem;
+}
+
+.speed-leg {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.65rem;
+    color: hsl(var(--bc) / 0.55);
+    margin-bottom: 0.1rem;
 }
 
 /* Sortable table headers */
@@ -1178,6 +1313,13 @@ html[data-density="compact"] .card-body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+    .active-strip-row {
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+    }
 }
 
 /* =====================================================================

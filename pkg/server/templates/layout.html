@@ -121,7 +121,7 @@
     </header>
     {{ end }}
 
-    <main class="app-content {{ if not .ShowNav }}app-content-bare{{ end }}">
+    <main class="app-content{{ if .ContentWide }} app-content-wide{{ end }}{{ if not .ShowNav }} app-content-bare{{ end }}">
         <div class="app-content-inner">
             {{ if eq .Page "overview" }}
             {{ template "overview" . }}

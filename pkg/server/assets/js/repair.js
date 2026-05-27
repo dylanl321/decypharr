@@ -530,12 +530,12 @@ class RepairManager {
                     <i class="bi bi-chevron-right transition-transform" id="${rowId}-caret"></i>
                 </td>
                 <td class="font-mono text-sm break-all">${this.escape(h.entry_name)}</td>
-                <td><span class="badge badge-ghost badge-sm">${this.escape(h.protocol || 'unknown')}</span></td>
+                <td class="hidden md:table-cell"><span class="badge badge-ghost badge-sm">${this.escape(h.protocol || 'unknown')}</span></td>
                 <td>${fileCount}</td>
                 <td class="text-error font-medium">${brokenCount}</td>
                 <td class="text-xs">${this.escape(reason)}</td>
-                <td class="text-xs">${lastChecked}</td>
-                <td class="text-xs">${lastRepair}</td>
+                <td class="text-xs hidden md:table-cell">${lastChecked}</td>
+                <td class="text-xs hidden md:table-cell">${lastRepair}</td>
                 <td class="text-right whitespace-nowrap">
                     <button class="btn btn-xs btn-outline" data-action="recheck" data-name="${this.escapeAttr(h.entry_name)}" aria-label="Recheck ${this.escape(h.entry_name)}">
                         <i class="bi bi-search-heart"></i>
@@ -716,14 +716,14 @@ class RepairManager {
             const duration = start && end ? this.formatDuration(end - start) : (start ? 'running' : '-');
             tr.innerHTML = `
                 <td class="font-mono text-sm">${start ? start.toLocaleString() : '-'}</td>
-                <td>${run.trigger || '-'}</td>
+                <td class="hidden md:table-cell">${run.trigger || '-'}</td>
                 <td>${this.statusBadge(run.status)}</td>
-                <td>${run.stats?.probed ?? 0}</td>
+                <td class="hidden md:table-cell">${run.stats?.probed ?? 0}</td>
                 <td class="${run.stats?.broken ? 'text-error font-medium' : ''}">${run.stats?.broken ?? 0}</td>
                 <td class="${run.stats?.repaired ? 'text-success font-medium' : ''}">${run.stats?.repaired ?? 0}</td>
-                <td class="${run.stats?.cleared ? 'text-warning font-medium' : ''}">${run.stats?.cleared ?? 0}</td>
+                <td class="hidden md:table-cell ${run.stats?.cleared ? 'text-warning font-medium' : ''}">${run.stats?.cleared ?? 0}</td>
                 <td>${duration}</td>
-                <td class="text-xs text-error">${run.error || ''}</td>
+                <td class="text-xs text-error hidden lg:table-cell">${run.error || ''}</td>
             `;
             tbody.appendChild(tr);
         }
