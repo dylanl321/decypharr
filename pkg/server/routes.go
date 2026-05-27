@@ -70,6 +70,7 @@ func (s *Server) WebRoutes() http.Handler {
 			r.Get("/queue/{hash}", s.handleGetQueueItem)
 			r.Get("/queue/{hash}/timeline", s.handleGetQueueTimeline)
 			r.Post("/queue/{hash}/retry", s.handleRetryQueueItem)
+			r.Post("/queue/{hash}/cancel", s.handleCancelPendingQueueItem)
 			r.Post("/queue/{hash}/pause", s.handlePauseQueueItem)
 			r.Post("/queue/{hash}/resume", s.handleResumeQueueItem)
 			r.Delete("/queue/completed", s.handleDeleteCompleted)

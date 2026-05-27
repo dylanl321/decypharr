@@ -198,6 +198,28 @@ The global `torrent_debrid` field, when set, pins all torrent submissions to one
 | `max_connections` | int    | Max connections to this server     | `20`                |
 | `priority`        | int    | Provider priority (lower = higher) | Index + 1           |
 
+## Pending queue and retries
+
+When all debrid providers are slot-limited or rate-limited, grabs from Sonarr/Radarr (qBittorrent `torrents/add` and SABnzbd `addfile`) are accepted immediately and stored as **pending** while a background worker retries submission.
+
+```json
+{
+  "max_pending_hours": 6,
+  "pending_retry_interval_seconds": 30,
+  "pending_max_retry_interval_seconds": 900
+}
+```
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `max_pending_hours` | Mark pending entries as error after this many hours so *arr can re-grab | `6` |
+| `pending_retry_interval_seconds` | Initial retry interval for pending submit and transient local-pull auto-retry | `30` |
+| `pending_max_retry_interval_seconds` | Maximum backoff between retries | `900` (15 min) |
+
+**Queue UI:** Use **Cancel** on a pending row to remove it from the queue without deleting anything on the provider (so *arr can pick another release). **Retry** on error or stalled downloads re-runs only files that failed in the timeline when some files already completed.
+
+Environment variables: `DECYPHARR_MAX_PENDING_HOURS`, `DECYPHARR_PENDING_RETRY_INTERVAL_SECONDS`, `DECYPHARR_PENDING_MAX_RETRY_INTERVAL_SECONDS`.
+
 ## Mounting
 
 Mount configuration determines how files are exposed on the filesystem.

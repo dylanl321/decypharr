@@ -7,6 +7,21 @@ import (
 	"github.com/sirrobot01/decypharr/pkg/storage"
 )
 
+// debridTorrentReadyForLocalPull is true when the provider reports complete and at least one
+// file is known. Torbox (and others) may return status "cached"/downloaded before the file
+// list is populated; starting the local pull then yields "0 files" / no download links.
+func debridTorrentReadyForLocalPull(t *debridTypes.Torrent) bool {
+	if t == nil || t.Status != debridTypes.TorrentStatusDownloaded {
+		return false
+	}
+	for _, f := range t.Files {
+		if f.Name != "" && !f.Deleted {
+			return true
+		}
+	}
+	return false
+}
+
 // backfillEntryFromDebrid merges provider status and file list from a remote debrid torrent
 // into the queue entry. Required before HTTP pull when files were not populated at submit time.
 func backfillEntryFromDebrid(entry *storage.Entry, debridTorrent *debridTypes.Torrent) {

@@ -62,6 +62,9 @@ type ImportRequest struct {
 	// slot exhaustion across all eligible providers). Used to emit a
 	// `queued` timeline event on the entry once it eventually submits.
 	QueuedAt *time.Time `json:"queued_at,omitempty"`
+
+	// BlockedProviders skips these debrid names on submit/retry (per-entry DMCA list).
+	BlockedProviders []string `json:"-"`
 }
 
 // SubmitAttempt records a single provider's reason for being skipped during

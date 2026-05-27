@@ -12,6 +12,49 @@ import (
 
 const cacheCheckTimeout = 5 * time.Second
 
+func isProviderBlocked(name string, blocked []string) bool {
+	if name == "" || len(blocked) == 0 {
+		return false
+	}
+	for _, b := range blocked {
+		if strings.EqualFold(b, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// filterBlockedClients removes providers listed in entry.BlockedProviders (per-hash DMCA skips).
+func filterBlockedClients(clients []debrid.Client, blocked []string) []debrid.Client {
+	if len(blocked) == 0 || len(clients) == 0 {
+		return clients
+	}
+	out := make([]debrid.Client, 0, len(clients))
+	for _, c := range clients {
+		name := c.Config().Name
+		if isProviderBlocked(name, blocked) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// filterBlockedNZBClients applies the same blocklist to NZB client list.
+func filterBlockedNZBClients(items []namedNZBClient, blocked []string) []namedNZBClient {
+	if len(blocked) == 0 || len(items) == 0 {
+		return items
+	}
+	out := make([]namedNZBClient, 0, len(items))
+	for _, item := range items {
+		if isProviderBlocked(item.name, blocked) {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
 // orderedDebridClients returns configured debrid clients in config order, optionally filtered by name.
 func (m *Manager) orderedDebridClients(selectedDebrid string) []debrid.Client {
 	cfg := config.Get()
@@ -28,45 +71,15 @@ func (m *Manager) orderedDebridClients(selectedDebrid string) []debrid.Client {
 	return out
 }
 
-// applyDebridOrder reorders a list of debrid configs so that names appearing
-// in `preferred` come first (in the listed order), followed by any remaining
-// configs in their original order. Names in `preferred` that don't exist in
-// the source list are silently ignored.
-func applyDebridOrder(debrids []config.Debrid, preferred []string) []config.Debrid {
-	if len(preferred) == 0 || len(debrids) == 0 {
-		return debrids
-	}
-	byName := make(map[string]config.Debrid, len(debrids))
-	for _, d := range debrids {
-		byName[d.Name] = d
-	}
-	seen := make(map[string]bool, len(debrids))
-	out := make([]config.Debrid, 0, len(debrids))
-	for _, name := range preferred {
-		if d, ok := byName[name]; ok && !seen[name] {
-			out = append(out, d)
-			seen[name] = true
-		}
-	}
-	for _, d := range debrids {
-		if !seen[d.Name] {
-			out = append(out, d)
-			seen[d.Name] = true
-		}
-	}
-	return out
-}
-
 // orderedTorrentDebridClients returns torrent-eligible clients in preferred order.
-// Honors the per-debrid `allow_torrents` flag, the global `torrent_debrid` pin,
-// and the optional `torrent_debrid_order` preference list.
+// Honors allow_torrents, torrent_debrid pin, prefer_torrents checkboxes, and torrent_debrid_order.
 func (m *Manager) orderedTorrentDebridClients(selectedDebrid string) []debrid.Client {
 	cfg := config.Get()
 	pin := selectedDebrid
 	if pin == "" {
 		pin = cfg.TorrentDebrid
 	}
-	debrids := applyDebridOrder(cfg.Debrids, cfg.TorrentDebridOrder)
+	debrids := config.OrderDebridsForTorrents(cfg.Debrids, cfg.TorrentDebridOrder)
 	out := make([]debrid.Client, 0, len(debrids))
 	for _, dc := range debrids {
 		if pin != "" && dc.Name != pin {

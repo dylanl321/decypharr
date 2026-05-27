@@ -208,17 +208,28 @@ func (m *Manager) processQueuedTorrent(entry *storage.Entry) {
 
 	_ = m.queue.Update(entry)
 
-	debridComplete := debridTorrent.Status == debridTypes.TorrentStatusDownloaded ||
-		(entry.DebridProgress >= 1.0 && len(debridTorrent.Files) > 0 && debridTorrent.Status != debridTypes.TorrentStatusError)
-
-	if debridComplete {
+	if debridTorrentReadyForLocalPull(debridTorrent) {
 		backfillEntryFromDebrid(entry, debridTorrent)
 		_ = m.queue.Update(entry)
 		m.processAction(entry)
+		return
+	}
+	if debridTorrent.Status == debridTypes.TorrentStatusDownloaded {
+		m.logger.Info().
+			Str("name", entry.Name).
+			Str("provider", entry.ActiveProvider).
+			Msg("Provider reports ready but file list is empty; waiting for next status poll")
 	}
 }
 
 func (m *Manager) processAction(entry *storage.Entry) {
+	if len(entry.GetActiveFiles()) == 0 {
+		m.logger.Warn().
+			Str("name", entry.Name).
+			Str("provider", entry.ActiveProvider).
+			Msg("Skipping local pull: no files on entry yet")
+		return
+	}
 	entry.Status = debridTypes.TorrentStatusDownloaded
 	entry.Phase = storage.DownloadPhaseDownloading
 	entry.UpdatedAt = time.Now()
@@ -277,11 +288,18 @@ func (m *Manager) processNewTorrent(torrent *storage.Entry, debridTorrent *debri
 	torrent.Progress = torrent.DebridProgress
 	_ = m.queue.Update(torrent)
 
-	if debridTorrent.Status != debridTypes.TorrentStatusDownloaded {
-		m.logger.Info().
-			Str("debrid", debridTorrent.Debrid).
-			Str("name", debridTorrent.Name).
-			Msg("Started downloading torrent")
+	if !debridTorrentReadyForLocalPull(debridTorrent) {
+		if debridTorrent.Status == debridTypes.TorrentStatusDownloaded {
+			m.logger.Info().
+				Str("debrid", debridTorrent.Debrid).
+				Str("name", debridTorrent.Name).
+				Msg("Provider reports ready but file list is empty; waiting for status poll")
+		} else {
+			m.logger.Info().
+				Str("debrid", debridTorrent.Debrid).
+				Str("name", debridTorrent.Name).
+				Msg("Started downloading torrent")
+		}
 		return
 	}
 
@@ -311,6 +329,10 @@ func (m *Manager) SendToDebrid(ctx context.Context, importRequest *ImportRequest
 		return nil, customerror.TooManyActiveDownloadsError
 	}
 	clients = eligible
+	clients = filterBlockedClients(clients, importRequest.BlockedProviders)
+	if len(clients) == 0 {
+		return nil, fmt.Errorf("no debrid clients available after applying blocked providers")
+	}
 
 	if config.Get().PreferCached() {
 		if cached, ok := m.selectCachedProvider(ctx, importRequest.Magnet.InfoHash, clients); ok {
@@ -457,8 +479,8 @@ func (m *Manager) classifySubmitError(err error, importReq *ImportRequest) (stri
 		return "", false // Permanent - can't retry without configuration
 	}
 
-	// Default: treat unknown errors as potentially retryable
-	return "rate_limited", true
+	// Unknown errors are permanent so misconfiguration is not hidden as infinite pending.
+	return "", false
 }
 
 func (m *Manager) processNewNZBDebrid(entry *storage.Entry, usenetDownload *debridTypes.UsenetDownload) {
@@ -471,11 +493,18 @@ func (m *Manager) processNewNZBDebrid(entry *storage.Entry, usenetDownload *debr
 	entry.Progress = entry.DebridProgress
 	_ = m.queue.Update(entry)
 
-	if usenetDownload.Status != debridTypes.TorrentStatusDownloaded {
-		m.logger.Info().
-			Str("debrid", usenetDownload.Debrid).
-			Str("name", usenetDownload.Name).
-			Msg("Started downloading NZB via debrid")
+	if !debridTorrentReadyForLocalPull(usenetDownload.AsTorrent()) {
+		if usenetDownload.Status == debridTypes.TorrentStatusDownloaded {
+			m.logger.Info().
+				Str("debrid", usenetDownload.Debrid).
+				Str("name", usenetDownload.Name).
+				Msg("NZB provider reports ready but file list is empty; waiting for status poll")
+		} else {
+			m.logger.Info().
+				Str("debrid", usenetDownload.Debrid).
+				Str("name", usenetDownload.Name).
+				Msg("Started downloading NZB via debrid")
+		}
 		return
 	}
 
@@ -537,13 +566,17 @@ func (m *Manager) processQueuedNZBDebrid(entry *storage.Entry) {
 	}
 	_ = m.queue.Update(entry)
 
-	debridComplete := usenetDownload.Status == debridTypes.TorrentStatusDownloaded ||
-		(entry.DebridProgress >= 1.0 && len(usenetDownload.Files) > 0 && usenetDownload.Status != debridTypes.TorrentStatusError)
-
-	if debridComplete {
+	if debridTorrentReadyForLocalPull(usenetDownload.AsTorrent()) {
 		backfillEntryFromDebrid(entry, usenetDownload.AsTorrent())
 		_ = m.queue.Update(entry)
 		m.processAction(entry)
+		return
+	}
+	if usenetDownload.Status == debridTypes.TorrentStatusDownloaded {
+		m.logger.Info().
+			Str("name", entry.Name).
+			Str("provider", entry.ActiveProvider).
+			Msg("NZB provider reports ready but file list is empty; waiting for next status poll")
 	}
 }
 
@@ -574,6 +607,10 @@ func (m *Manager) SendToNZBDebrid(ctx context.Context, importRequest *ImportRequ
 		return nil, customerror.TooManyActiveDownloadsError
 	}
 	clients = eligible
+	clients = filterBlockedNZBClients(clients, importRequest.BlockedProviders)
+	if len(clients) == 0 {
+		return nil, fmt.Errorf("no NZB-capable debrid clients available after applying blocked providers")
+	}
 
 	if config.Get().PreferCached() {
 		if cached, ok := m.selectCachedNZBProvider(ctx, hash, importRequest.SelectedDebrid); ok {
@@ -654,7 +691,7 @@ type namedNZBClient struct {
 
 func (m *Manager) orderedNamedNZBClients(selectedDebrid string) []namedNZBClient {
 	cfg := config.Get()
-	debrids := applyDebridOrder(cfg.Debrids, cfg.NZBDebridOrder)
+	debrids := config.OrderDebridsForNZBs(cfg.Debrids, cfg.NZBDebridOrder)
 	out := make([]namedNZBClient, 0, len(debrids))
 	for _, dc := range debrids {
 		if selectedDebrid != "" && dc.Name != selectedDebrid {

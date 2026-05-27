@@ -1,6 +1,8 @@
 package qbit
 
 import (
+	"strings"
+
 	"github.com/sirrobot01/decypharr/pkg/storage"
 )
 
@@ -418,7 +420,7 @@ func convertToQBitTorrentTorrent(t *storage.Entry) Torrent {
 	}
 
 	qbitTorrent := Torrent{
-		Hash:         t.InfoHash,
+		Hash:         strings.ToUpper(t.InfoHash),
 		Name:         t.Name,
 		Size:         t.Size,
 		Progress:     t.Progress,

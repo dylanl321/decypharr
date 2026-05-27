@@ -82,6 +82,21 @@ func (s *Service) GetLink(ctx context.Context, entry *storage.Entry, filename st
 	return v.(types.DownloadLink), nil
 }
 
+// InvalidateEntryValidation clears cached HEAD validation results for an entry's files
+// so a local retry refetches links instead of reusing a stale failure.
+func (s *Service) InvalidateEntryValidation(ctx context.Context, entry *storage.Entry) {
+	if entry == nil {
+		return
+	}
+	for _, file := range entry.GetActiveFiles() {
+		link, err := s.fetchLink(ctx, entry, file.Name, 0)
+		if err != nil || link.DownloadLink == "" {
+			continue
+		}
+		s.validated.Delete(link.DownloadLink)
+	}
+}
+
 func (s *Service) getClient(provider string) (debrid.Client, error) {
 	c, ok := s.clients.Load(provider)
 	if !ok {

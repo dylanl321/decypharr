@@ -636,6 +636,26 @@ class ConfigManager {
                     <div>
                         <label class="label cursor-pointer justify-start gap-2">
                             <input type="checkbox" class="checkbox checkbox-primary"
+                                   name="debrid[${index}].prefer_torrents" id="debrid[${index}].prefer_torrents">
+                            <div>
+                                <span class="font-medium">Prefer for torrents</span>
+                                <div class="label-text-alt">Try this provider first; others used if submit fails</div>
+                            </div>
+                        </label>
+                    </div>
+                    <div>
+                        <label class="label cursor-pointer justify-start gap-2">
+                            <input type="checkbox" class="checkbox checkbox-primary"
+                                   name="debrid[${index}].prefer_nzbs" id="debrid[${index}].prefer_nzbs">
+                            <div>
+                                <span class="font-medium">Prefer for NZBs</span>
+                                <div class="label-text-alt">Try this provider first for NZB grabs</div>
+                            </div>
+                        </label>
+                    </div>
+                    <div>
+                        <label class="label cursor-pointer justify-start gap-2">
+                            <input type="checkbox" class="checkbox checkbox-primary"
                                    name="debrid[${index}].remove_on_complete" id="debrid[${index}].remove_on_complete">
                             <div>
                                 <span class="font-medium">Remove on Complete</span>
@@ -1455,6 +1475,8 @@ class ConfigManager {
             const autoExpireLinksAfterInput = getField('auto_expire_links_after');
             const allowTorrentsInput = getField('allow_torrents');
             const allowNZBsInput = getField('allow_nzbs');
+            const preferTorrentsInput = getField('prefer_torrents');
+            const preferNZBsInput = getField('prefer_nzbs');
             const removeOnCompleteInput = getField('remove_on_complete');
 
             if (!nameInput || !providerInput || !apiKeyInput || !rateLimitInput || !repairRateLimitInput || !downloadRateLimitInput ||
@@ -1489,6 +1511,12 @@ class ConfigManager {
             }
             if (allowNZBsInput) {
                 debrid.allow_nzbs = allowNZBsInput.checked;
+            }
+            if (preferTorrentsInput) {
+                debrid.prefer_torrents = preferTorrentsInput.checked;
+            }
+            if (preferNZBsInput) {
+                debrid.prefer_nzbs = preferNZBsInput.checked;
             }
             if (removeOnCompleteInput) {
                 debrid.remove_on_complete = removeOnCompleteInput.checked;

@@ -220,6 +220,9 @@ func isTransientDownloadError(err error) bool {
 	if linkErr := link.GetLinkError(err); linkErr != nil && linkErr.ShouldRetry() {
 		return true
 	}
+	if customerror.IsRetriableError(err) {
+		return true
+	}
 	var customErr *customerror.Error
 	if errors.As(err, &customErr) {
 		switch customErr.Code {
@@ -231,6 +234,13 @@ func isTransientDownloadError(err error) bool {
 		}
 	}
 	return false
+}
+
+func (d *Downloader) recordFileTimeline(entry *storage.Entry, mu *sync.Mutex, kind storage.TimelineEventKind, provider, fileName, message string, bytes int64, dur time.Duration) {
+	mu.Lock()
+	entry.AppendFileEvent(kind, provider, fileName, message, bytes, dur)
+	mu.Unlock()
+	_ = d.manager.queue.Update(entry)
 }
 
 // processSymlink creates symlinks for torrent files
@@ -309,8 +319,10 @@ func (d *Downloader) createSymlinksWhenMountFilesAppear(entry *storage.Entry, fi
 			if file, exists := remainingFiles[entryName]; exists {
 				fileSymlinkPath := filepath.Join(symlinkDir, file.Name)
 				if err := os.Symlink(fullPath, fileSymlinkPath); err != nil && !os.IsExist(err) {
+					entry.AppendFileEvent(storage.TimelineFileSymlinkFailed, entry.ActiveProvider, file.Name, err.Error(), 0, 0)
 					return fmt.Errorf("failed to create symlink %s -> %s: %w", fileSymlinkPath, fullPath, err)
 				}
+				entry.AppendFileEvent(storage.TimelineFileSymlinkComplete, entry.ActiveProvider, file.Name, "", 0, 0)
 				filePaths = append(filePaths, fileSymlinkPath)
 				delete(remainingFiles, entryName)
 				d.logger.Info().Msgf("File is ready: %s/%s", entry.GetFolder(), file.Name)
@@ -529,6 +541,10 @@ func (d *Downloader) processDownload(entry *storage.Entry) error {
 // processTorrentDownload downloads files from debrid via HTTP
 func (d *Downloader) processTorrentDownload(entry *storage.Entry) error {
 	files := entry.GetActiveFiles()
+	if entry.RetryFailedFilesOnly || entry.HasPartialFileFailures() {
+		files = entry.FilesForLocalRetry(files)
+		entry.RetryFailedFilesOnly = false
+	}
 	d.logger.Info().Msgf("Downloading %d files...", len(files))
 
 	totalSize := int64(0)
@@ -550,6 +566,7 @@ func (d *Downloader) processTorrentDownload(entry *storage.Entry) error {
 	entry.AppendEvent(storage.TimelineLocalDownloadStart, entry.ActiveProvider, fmt.Sprintf("%d files", len(files)))
 
 	var progressMu sync.Mutex
+	var timelineMu sync.Mutex
 	progressCallback := func(downloaded int64, speed int64) {
 		progressMu.Lock()
 		defer progressMu.Unlock()
@@ -574,6 +591,7 @@ func (d *Downloader) processTorrentDownload(entry *storage.Entry) error {
 		downloadLink, err := d.manager.linkService.GetLink(context.Background(), entry, file.Name)
 		if err != nil {
 			d.logger.Error().Msgf("Failed to get download link for %s: %v", file.Name, err)
+			d.recordFileTimeline(entry, &timelineMu, storage.TimelineFileDownloadFailed, entry.ActiveProvider, file.Name, err.Error(), 0, 0)
 			continue
 		}
 		tasks = append(tasks, downloadTask{file: file, link: downloadLink.DownloadLink})
@@ -584,13 +602,18 @@ func (d *Downloader) processTorrentDownload(entry *storage.Entry) error {
 		return fmt.Errorf("no valid download links available for %s", entry.Name)
 	}
 
-	p := pool.New().WithErrors().WithFirstError()
+	p := pool.New().WithErrors()
 	if d.maxDownloads > 0 {
 		p = p.WithMaxGoroutines(d.maxDownloads)
 	}
 	provider := entry.ActiveProvider
+	var failCount, successCount int
+	var countMu sync.Mutex
 	for _, task := range tasks {
+		task := task
 		p.Go(func() error {
+			d.recordFileTimeline(entry, &timelineMu, storage.TimelineFileDownloadStart, provider, task.file.Name, "", 0, 0)
+			started := time.Now()
 			if err := d.localDownloader(
 				task.link,
 				filepath.Join(downloadedFolder, task.file.Name),
@@ -599,15 +622,32 @@ func (d *Downloader) processTorrentDownload(entry *storage.Entry) error {
 				progressCallback,
 			); err != nil {
 				d.logger.Error().Msgf("Failed to download %s: %v", task.file.Name, err)
+				d.recordFileTimeline(entry, &timelineMu, storage.TimelineFileDownloadFailed, provider, task.file.Name, err.Error(), 0, time.Since(started))
+				countMu.Lock()
+				failCount++
+				countMu.Unlock()
 				return err
 			}
+			d.recordFileTimeline(entry, &timelineMu, storage.TimelineFileDownloadComplete, provider, task.file.Name, "", task.file.Size, time.Since(started))
 			d.logger.Info().Msgf("Downloaded %s", task.file.Name)
+			countMu.Lock()
+			successCount++
+			countMu.Unlock()
 			return nil
 		})
 	}
 
-	if err := p.Wait(); err != nil {
-		return fmt.Errorf("download failed: %w", err)
+	err := p.Wait()
+	if successCount == 0 {
+		if err != nil {
+			return fmt.Errorf("download failed: %w", err)
+		}
+		return fmt.Errorf("download failed: no files succeeded")
+	}
+	if failCount > 0 {
+		partialErr := fmt.Errorf("%d of %d files failed", failCount, len(tasks))
+		d.markAsError(entry, partialErr)
+		return nil
 	}
 	d.completeEntry(entry)
 	d.logger.Info().Msgf("Downloaded all files for %s", entry.Name)
@@ -639,19 +679,29 @@ func (d *Downloader) processUsenetDownload(entry *storage.Entry) error {
 	_ = d.manager.queue.Update(entry)
 
 	var progressMu sync.Mutex
+	var timelineMu sync.Mutex
 	// Track per-file progress so we can compute the global total across all files
 	fileProgress := make(map[string]int64)
+
+	entry.AppendEvent(storage.TimelineLocalDownloadStart, "usenet", fmt.Sprintf("%d files", len(files)))
+	_ = d.manager.queue.Update(entry)
 
 	p := pool.New().WithErrors().WithFirstError()
 	if d.maxDownloads > 0 {
 		p = p.WithMaxGoroutines(d.maxDownloads)
 	}
 	for _, file := range files {
+		file := file
 		p.Go(func() error {
 			destPath := filepath.Join(downloadedFolder, file.Name)
+			d.recordFileTimeline(entry, &timelineMu, storage.TimelineFileDownloadStart, "usenet", file.Name, "", 0, 0)
+			started := time.Now()
+
 			destFile, err := os.Create(destPath)
 			if err != nil {
-				return fmt.Errorf("failed to create file %s: %w", file.Name, err)
+				err = fmt.Errorf("failed to create file %s: %w", file.Name, err)
+				d.recordFileTimeline(entry, &timelineMu, storage.TimelineFileDownloadFailed, "usenet", file.Name, err.Error(), 0, time.Since(started))
+				return err
 			}
 			defer destFile.Close()
 
@@ -672,9 +722,12 @@ func (d *Downloader) processUsenetDownload(entry *storage.Entry) error {
 
 			if err := d.manager.usenet.Download(d.manager.ctx, entry.InfoHash, file.Name, destFile, progressCallback); err != nil {
 				_ = os.Remove(destPath)
-				return fmt.Errorf("failed to download %s: %w", file.Name, err)
+				wrapped := fmt.Errorf("failed to download %s: %w", file.Name, err)
+				d.recordFileTimeline(entry, &timelineMu, storage.TimelineFileDownloadFailed, "usenet", file.Name, err.Error(), 0, time.Since(started))
+				return wrapped
 			}
 
+			d.recordFileTimeline(entry, &timelineMu, storage.TimelineFileDownloadComplete, "usenet", file.Name, "", file.Size, time.Since(started))
 			d.logger.Info().Msgf("Downloaded NZB file: %s", file.Name)
 			return nil
 		})
@@ -717,11 +770,14 @@ func (d *Downloader) processStrm(torrent *storage.Entry) error {
 			url.PathEscape(file.Name),
 		)
 		if err != nil {
+			torrent.AppendFileEvent(storage.TimelineFileSymlinkFailed, torrent.ActiveProvider, file.Name, err.Error(), 0, 0)
 			continue
 		}
 		if err := os.WriteFile(strmFilePath, []byte(streamURL), 0644); err != nil {
+			torrent.AppendFileEvent(storage.TimelineFileSymlinkFailed, torrent.ActiveProvider, file.Name, err.Error(), 0, 0)
 			return fmt.Errorf("failed to create .strm file: %s: %v", strmFilePath, err)
 		}
+		torrent.AppendFileEvent(storage.TimelineFileSymlinkComplete, torrent.ActiveProvider, file.Name, "", 0, 0)
 	}
 	d.completeEntry(torrent)
 	d.logger.Info().Str("destination", torrentSymlinkPath).Msgf("Created .strm files for %s", torrent.Name)

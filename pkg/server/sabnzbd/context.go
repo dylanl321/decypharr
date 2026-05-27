@@ -93,7 +93,7 @@ func (s *SABnzbd) authContext(next http.Handler) http.Handler {
 		host := r.URL.Query().Get("ma_username")
 		token := r.URL.Query().Get("ma_password")
 		category := getCategory(r.Context())
-		a, err := s.authenticate(category, host, token)
+		a, err := s.authenticate(category, host, token, shouldSkipSABArrValidate(r))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
@@ -103,7 +103,16 @@ func (s *SABnzbd) authContext(next http.Handler) http.Handler {
 	})
 }
 
-func (s *SABnzbd) authenticate(category, username, password string) (*arr.Arr, error) {
+func shouldSkipSABArrValidate(r *http.Request) bool {
+	_ = r.ParseForm()
+	mode := strings.ToLower(r.URL.Query().Get("mode"))
+	if mode == "" {
+		mode = strings.ToLower(r.Form.Get("mode"))
+	}
+	return mode == ModeAddFile
+}
+
+func (s *SABnzbd) authenticate(category, username, password string, skipArrValidate bool) (*arr.Arr, error) {
 	cfg := config.Get()
 	a := s.manager.Arr().Get(category)
 	if a == nil {
@@ -127,7 +136,9 @@ func (s *SABnzbd) authenticate(category, username, password string) (*arr.Arr, e
 		a.Host = username
 		a.Token = password
 	}
-	if err := a.Validate(); err == nil {
+	if skipArrValidate {
+		arrValidated = true
+	} else if arr.ValidateCached(a) {
 		arrValidated = true
 	}
 

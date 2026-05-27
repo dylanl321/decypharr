@@ -71,6 +71,21 @@ func (m *Manager) schedulePendingSubmit(hash string) {
 	}()
 }
 
+// CancelPendingEntry removes a pending queue row without debrid cleanup so *arr can re-grab.
+func (m *Manager) CancelPendingEntry(hash string) error {
+	hash = strings.ToLower(hash)
+	entry, err := m.queue.GetTorrent(hash)
+	if err != nil || entry == nil {
+		return fmt.Errorf("queue item not found")
+	}
+	if entry.State != storage.EntryStatePending {
+		return fmt.Errorf("only pending entries can be cancelled")
+	}
+	entry.AppendEvent(storage.TimelineRemoved, "", "Cancelled from pending queue")
+	_ = m.queue.Update(entry)
+	return m.queue.Delete(hash, nil)
+}
+
 func (m *Manager) submitPendingByHash(hash string) {
 	entry, err := m.queue.GetTorrent(hash)
 	if err != nil || entry == nil || entry.State != storage.EntryStatePending {
@@ -86,6 +101,9 @@ func (m *Manager) submitTorrentImport(ctx context.Context, importReq *ImportRequ
 	}
 	hash := strings.ToLower(importReq.Magnet.InfoHash)
 	existing, _ := m.queue.GetTorrent(hash)
+	if existing != nil && len(existing.BlockedProviders) > 0 {
+		importReq.BlockedProviders = append([]string(nil), existing.BlockedProviders...)
+	}
 
 	debridTorrent, err := m.SendToDebrid(ctx, importReq)
 	if err != nil {
@@ -126,8 +144,17 @@ func (m *Manager) refreshPendingAfterFailedSubmit(entry *storage.Entry, importRe
 	entry.PendingReason = reason
 	entry.UpdatedAt = time.Now()
 	entry.AppendEvent(storage.TimelinePendingRetryFailed, "", fmt.Sprintf("Retry #%d failed: %s", entry.PendingAttempts, reason))
+	m.appendSubmitAttemptsToTimeline(entry, importReq.SubmitAttempts)
 	m.mergeBlockedProviders(entry, importReq.SubmitAttempts)
 	_ = m.queue.Update(entry)
+}
+
+// appendSubmitAttemptsToTimeline records per-provider fallback failures on the entry timeline.
+func (m *Manager) appendSubmitAttemptsToTimeline(entry *storage.Entry, attempts []SubmitAttempt) {
+	for _, attempt := range attempts {
+		kind, msg := submitAttemptEvent(attempt)
+		entry.AppendEvent(kind, attempt.Provider, msg)
+	}
 }
 
 func (m *Manager) mergeBlockedProviders(entry *storage.Entry, attempts []SubmitAttempt) {
@@ -228,6 +255,9 @@ func (m *Manager) submitNZBDebridImport(ctx context.Context, req *ImportRequest,
 	if entry == nil {
 		hash := nzbImportHash(req.NZBContent)
 		entry, _ = m.queue.GetTorrent(hash)
+	}
+	if entry != nil && len(entry.BlockedProviders) > 0 {
+		req.BlockedProviders = append([]string(nil), entry.BlockedProviders...)
 	}
 
 	usenetDownload, err := m.SendToNZBDebrid(ctx, req)
@@ -366,7 +396,7 @@ func (m *Manager) importReqFromPendingEntry(entry *storage.Entry) *ImportRequest
 		}
 		arr := m.arr.GetOrCreate(entry.Category)
 		uncached := entry.DownloadUncached
-		return NewTorrentRequest(
+		req := NewTorrentRequest(
 			"",
 			entry.SavePath,
 			magnet,
@@ -377,6 +407,8 @@ func (m *Manager) importReqFromPendingEntry(entry *storage.Entry) *ImportRequest
 			ImportTypeAPI,
 			entry.SkipMultiSeason,
 		)
+		req.BlockedProviders = append([]string(nil), entry.BlockedProviders...)
+		return req
 	}
 	if entry.IsNZB() {
 		if len(entry.NZBContent) == 0 {
@@ -386,7 +418,7 @@ func (m *Manager) importReqFromPendingEntry(entry *storage.Entry) *ImportRequest
 			return nil
 		}
 		arr := m.arr.GetOrCreate(entry.Category)
-		return NewNZBRequest(
+		req := NewNZBRequest(
 			entry.Name,
 			entry.SavePath,
 			entry.NZBContent,
@@ -396,6 +428,8 @@ func (m *Manager) importReqFromPendingEntry(entry *storage.Entry) *ImportRequest
 			ImportTypeAPI,
 			entry.SkipMultiSeason,
 		)
+		req.BlockedProviders = append([]string(nil), entry.BlockedProviders...)
+		return req
 	}
 	return nil
 }

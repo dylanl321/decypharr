@@ -17,6 +17,12 @@ import (
 var retriableErrorStrings = []string{
 	"use of closed network connection",
 	"unexpected EOF",
+	"unexpected status 502",
+	"unexpected status 503",
+	"unexpected status 504",
+	"bad gateway",
+	"service unavailable",
+	"gateway timeout",
 	"connection reset by peer",
 	"connection refused",
 	"broken pipe",

@@ -29,6 +29,8 @@ type Debrid struct {
 	// Routing capabilities. Pointers so an unset value can fall back to provider-specific defaults.
 	AllowTorrents      *bool `json:"allow_torrents,omitempty"`       // default true
 	AllowNZBs          *bool `json:"allow_nzbs,omitempty"`           // default true for NZB-capable providers (torbox), false otherwise
+	PreferTorrents     *bool `json:"prefer_torrents,omitempty"`      // try this provider before other torrent-eligible debrids
+	PreferNZBs         *bool `json:"prefer_nzbs,omitempty"`          // try this provider before other NZB-eligible debrids
 	MaxActiveDownloads int   `json:"max_active_downloads,omitempty"` // optional cap; 0 = use provider plan limit
 
 	// Post-completion cleanup
@@ -94,6 +96,16 @@ func (c *Config) updateDebrid(d Debrid) Debrid {
 	}
 
 	return d
+}
+
+// PrefersTorrents returns true when this debrid should be tried before other torrent-eligible providers.
+func (d Debrid) PrefersTorrents() bool {
+	return d.PreferTorrents != nil && *d.PreferTorrents
+}
+
+// PrefersNZBs returns true when this debrid should be tried before other NZB-eligible providers.
+func (d Debrid) PrefersNZBs() bool {
+	return d.PreferNZBs != nil && *d.PreferNZBs
 }
 
 // AllowsTorrents returns true if this debrid is eligible for torrent submissions.
@@ -167,6 +179,14 @@ func (c *Config) applyDebridEnvVars() {
 			if val := getEnv(prefix + "ALLOW_NZBS"); val != "" {
 				b := parseBool(val)
 				c.Debrids[i].AllowNZBs = &b
+			}
+			if val := getEnv(prefix + "PREFER_TORRENTS"); val != "" {
+				b := parseBool(val)
+				c.Debrids[i].PreferTorrents = &b
+			}
+			if val := getEnv(prefix + "PREFER_NZBS"); val != "" {
+				b := parseBool(val)
+				c.Debrids[i].PreferNZBs = &b
 			}
 			if val := getEnv(prefix + "MAX_ACTIVE_DOWNLOADS"); val != "" {
 				if n, err := strconv.Atoi(val); err == nil {

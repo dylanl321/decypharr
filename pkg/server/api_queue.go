@@ -7,7 +7,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/sirrobot01/decypharr/internal/config"
 	"github.com/sirrobot01/decypharr/internal/utils"
-	"github.com/sirrobot01/decypharr/pkg/manager"
 	"github.com/sirrobot01/decypharr/pkg/storage"
 )
 
@@ -98,6 +97,21 @@ func synthesizeTimeline(t *storage.Entry) []storage.TimelineEvent {
 	return out
 }
 
+// handleCancelPendingQueueItem removes a pending entry without provider cleanup.
+func (s *Server) handleCancelPendingQueueItem(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+	if hash == "" {
+		http.Error(w, "No hash provided", http.StatusBadRequest)
+		return
+	}
+	if err := s.manager.CancelPendingEntry(hash); err != nil {
+		s.logger.Error().Err(err).Str("hash", hash).Msg("Failed to cancel pending queue item")
+		http.Error(w, "Failed to cancel: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	utils.JSONResponse(w, map[string]string{"status": "cancelled"}, http.StatusOK)
+}
+
 // handleRetryQueueItem retries/requeues a failed or pending item
 func (s *Server) handleRetryQueueItem(w http.ResponseWriter, r *http.Request) {
 	hash := chi.URLParam(r, "hash")
@@ -106,73 +120,13 @@ func (s *Server) handleRetryQueueItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	torrent, err := s.manager.Queue().GetTorrent(hash)
-	if err != nil {
-		http.Error(w, "Queue item not found", http.StatusNotFound)
-		return
-	}
-
-	// Special handling for pending entries: reset retry counters for immediate pickup
-	if torrent.State == storage.EntryStatePending {
-		err := s.manager.Queue().UpdateWhere(
-			func(t *storage.Entry) bool {
-				return t.InfoHash == hash
-			},
-			func(t *storage.Entry) bool {
-				t.LastAttemptAt = nil
-				t.PendingAttempts = 0
-				t.UpdatedAt = time.Now()
-				return true
-			},
-		)
-
-		if err != nil {
-			s.logger.Error().Err(err).Str("hash", hash).Msg("Failed to reset pending entry retry counters")
-			http.Error(w, "Failed to retry", http.StatusInternalServerError)
-			return
-		}
-
-		s.manager.SchedulePendingSubmit(hash)
-
-		utils.JSONResponse(w, map[string]string{"status": "retry_scheduled"}, http.StatusOK)
-		return
-	}
-
-	// For error/failed entries: convert back to ImportRequest and requeue
-	if torrent.InfoHash == "" {
-		http.Error(w, "Cannot retry: missing info hash", http.StatusBadRequest)
-		return
-	}
-
-	// Get the arr from storage
-	arr := s.manager.Arr().Get(torrent.Category)
-	if arr == nil {
-		http.Error(w, "Cannot retry: arr not found", http.StatusBadRequest)
-		return
-	}
-
-	// Reconstruct magnet from stored data
-	magnet := &utils.Magnet{
-		InfoHash: torrent.InfoHash,
-		Name:     torrent.Name,
-	}
-
-	// Create a new import request
-	importReq := &manager.ImportRequest{
-		Magnet:         magnet,
-		Arr:            arr,
-		SelectedDebrid: torrent.ActiveProvider,
-		DownloadFolder: config.Get().DownloadFolder,
-		Action:         config.Get().DefaultDownloadAction,
-	}
-
-	if err := s.manager.Queue().ReQueue(importReq); err != nil {
+	if err := s.manager.RetryQueueEntry(r.Context(), hash); err != nil {
 		s.logger.Error().Err(err).Str("hash", hash).Msg("Failed to retry queue item")
-		http.Error(w, "Failed to retry: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to retry: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	utils.JSONResponse(w, map[string]string{"status": "queued"}, http.StatusOK)
+	utils.JSONResponse(w, map[string]string{"status": "retry_scheduled"}, http.StatusOK)
 }
 
 // handlePauseQueueItem pauses a downloading item
@@ -275,35 +229,11 @@ func (s *Server) handleDeleteErrors(w http.ResponseWriter, r *http.Request) {
 
 // handleRetryAllErrors retries all items in error state
 func (s *Server) handleRetryAllErrors(w http.ResponseWriter, r *http.Request) {
-	// Get all errored items
 	erroredItems := s.manager.Queue().ListFilter("", config.ProtocolAll, storage.EntryStateError, nil, "", false)
 
 	var successCount, failCount int
-
 	for _, torrent := range erroredItems {
-		// Get the arr
-		arr := s.manager.Arr().Get(torrent.Category)
-		if arr == nil {
-			failCount++
-			continue
-		}
-
-		// Reconstruct magnet
-		magnet := &utils.Magnet{
-			InfoHash: torrent.InfoHash,
-			Name:     torrent.Name,
-		}
-
-		// Create import request
-		importReq := &manager.ImportRequest{
-			Magnet:         magnet,
-			Arr:            arr,
-			SelectedDebrid: torrent.ActiveProvider,
-			DownloadFolder: config.Get().DownloadFolder,
-			Action:         config.Get().DefaultDownloadAction,
-		}
-
-		if err := s.manager.Queue().ReQueue(importReq); err != nil {
+		if err := s.manager.RetryQueueEntry(r.Context(), torrent.InfoHash); err != nil {
 			s.logger.Error().Err(err).Str("hash", torrent.InfoHash).Msg("Failed to retry queue item")
 			failCount++
 		} else {

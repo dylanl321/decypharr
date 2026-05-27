@@ -1433,6 +1433,37 @@ html[data-density="compact"] .card-body {
 .timeline-item[data-kind="error"] .timeline-marker { border-color: var(--color-error, #ef4444); color: var(--color-error, #ef4444); }
 .timeline-item[data-kind="provider_blocked"] .timeline-marker { border-color: var(--color-error, #ef4444); color: var(--color-error, #ef4444); }
 .timeline-item[data-kind="provider_skipped"] .timeline-marker { border-color: var(--color-warning, #f59e0b); color: var(--color-warning, #f59e0b); }
+.timeline-item[data-kind="file_download_started"] .timeline-marker { border-color: var(--color-info, #38bdf8); color: var(--color-info, #38bdf8); }
+.timeline-item[data-kind="file_download_completed"] .timeline-marker { border-color: var(--color-success, #22c55e); color: var(--color-success, #22c55e); }
+.timeline-item[data-kind="file_download_failed"] .timeline-marker { border-color: var(--color-error, #ef4444); color: var(--color-error, #ef4444); }
+.timeline-item--file .timeline-kind { font-size: 0.8rem; }
+.timeline-file { margin-top: 0.15rem; word-break: break-all; }
+
+.file-status-panel {
+    padding: 0.75rem;
+    border-radius: var(--rounded-box, 0.5rem);
+    background: color-mix(in oklch, var(--color-base-200, #1f2937) 60%, transparent);
+    border: 1px solid color-mix(in oklch, var(--color-base-content, #9ca3af) 12%, transparent);
+}
+.file-status-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    max-height: 10rem;
+    overflow-y: auto;
+}
+.file-status-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.35rem 0.5rem;
+    align-items: center;
+}
+.file-status-row .file-status-error {
+    grid-column: 1 / -1;
+}
 
 .timeline-kind {
     font-weight: 600;

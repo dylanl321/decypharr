@@ -111,7 +111,7 @@ func (q *QBit) authContext(next http.Handler) http.Handler {
 			return
 		}
 		category := getCategory(r.Context())
-		a, err := q.authenticate(category, username, password)
+		a, err := q.authenticate(category, username, password, shouldSkipArrValidate(r))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
@@ -142,7 +142,15 @@ func getUsernameAndPassword(r *http.Request) (string, string, error) {
 	return username, password, nil
 }
 
-func (q *QBit) authenticate(category, username, password string) (*arr.Arr, error) {
+func shouldSkipArrValidate(r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	path := strings.ToLower(r.URL.Path)
+	return strings.Contains(path, "/torrents/add")
+}
+
+func (q *QBit) authenticate(category, username, password string, skipArrValidate bool) (*arr.Arr, error) {
 	cfg := config.Get()
 	a := q.manager.Arr().Get(category)
 	if a == nil {
@@ -166,7 +174,9 @@ func (q *QBit) authenticate(category, username, password string) (*arr.Arr, erro
 		a.Host = username
 		a.Token = password
 	}
-	if err := a.Validate(); err == nil {
+	if skipArrValidate {
+		arrValidated = true
+	} else if arr.ValidateCached(a) {
 		arrValidated = true
 	}
 

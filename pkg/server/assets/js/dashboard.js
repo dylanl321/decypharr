@@ -27,6 +27,7 @@ class TorrentDashboard {
             selectAll: document.getElementById('selectAll'),
             batchDeleteBtn: document.getElementById('batchDeleteBtn'),
             batchDeleteDebridBtn: document.getElementById('batchDeleteDebridBtn'),
+            retryAllErrorsBtn: document.getElementById('retryAllErrorsBtn'),
             refreshBtn: document.getElementById('refreshBtn'),
             torrentContextMenu: document.getElementById('torrentContextMenu'),
             paginationControls: document.getElementById('paginationControls'),
@@ -123,6 +124,9 @@ class TorrentDashboard {
     bindEvents() {
         // Refresh button
         this.refs.refreshBtn.addEventListener('click', () => this.loadTorrents());
+        if (this.refs.retryAllErrorsBtn) {
+            this.refs.retryAllErrorsBtn.addEventListener('click', () => this.retryAllErrors());
+        }
 
         // Batch delete
         this.refs.batchDeleteBtn.addEventListener('click', () => this.deleteSelectedTorrents());
@@ -481,9 +485,16 @@ class TorrentDashboard {
                             <i class="bi bi-clock-history"></i>
                         </button>
                         ${torrent.state === 'pending' ? `
+                            <button class="btn btn-ghost btn-xs text-warning"
+                                    title="Cancel pending (no provider cleanup)"
+                                    onclick="window.dashboard.cancelPending('${torrent.info_hash}');">
+                                <i class="bi bi-x-circle"></i>
+                            </button>
+                        ` : ''}
+                        ${this.canRetryEntry(torrent) ? `
                             <button class="btn btn-ghost btn-xs text-info"
-                                    title="Retry Now"
-                                    onclick="window.dashboard.retryPendingEntry('${torrent.info_hash}');">
+                                    title="Retry failed download"
+                                    onclick="window.dashboard.retryEntry('${torrent.info_hash}');">
                                 <i class="bi bi-arrow-clockwise"></i>
                             </button>
                         ` : ''}
@@ -924,7 +935,27 @@ class TorrentDashboard {
         this.refs.selectAll.checked = allSelected;
     }
 
-    async retryPendingEntry(hash) {
+    canRetryEntry(torrent) {
+        if (!torrent || !torrent.info_hash) return false;
+        if (torrent.state === 'pending' || torrent.state === 'error') return true;
+        return torrent.state === 'downloading' && !!torrent.last_error && !torrent.is_downloading;
+    }
+
+    async cancelPending(hash) {
+        if (!confirm('Cancel this pending item? Sonarr can re-grab; nothing is removed from the debrid provider.')) return;
+        try {
+            const url = `${window.urlBase}api/queue/${hash}/cancel`;
+            const response = await window.decypharrUtils.fetcher(url, {method: 'POST'});
+            if (!response.ok) throw new Error('Failed to cancel pending entry');
+            window.decypharrUtils.createToast('Pending item cancelled');
+            this.loadTorrents();
+        } catch (error) {
+            console.error('Error cancelling pending entry:', error);
+            window.decypharrUtils.createToast('Failed to cancel pending entry', 'error');
+        }
+    }
+
+    async retryEntry(hash) {
         try {
             const url = `${window.urlBase}api/queue/${hash}/retry`;
             const response = await window.decypharrUtils.fetcher(url, {method: 'POST'});
@@ -936,6 +967,27 @@ class TorrentDashboard {
         } catch (error) {
             console.error('Error retrying entry:', error);
             window.decypharrUtils.createToast('Failed to retry entry', 'error');
+        }
+    }
+
+    async retryPendingEntry(hash) {
+        return this.retryEntry(hash);
+    }
+
+    async retryAllErrors() {
+        if (!confirm('Retry all failed queue items?')) return;
+        try {
+            const url = `${window.urlBase}api/queue/retry-all-errors`;
+            const response = await window.decypharrUtils.fetcher(url, {method: 'POST'});
+            if (!response.ok) throw new Error('Failed to retry failed items');
+            const data = await response.json();
+            window.decypharrUtils.createToast(
+                `Retry scheduled: ${data.retried ?? 0} of ${data.total ?? 0}`
+            );
+            this.loadTorrents();
+        } catch (error) {
+            console.error('Error retrying failed items:', error);
+            window.decypharrUtils.createToast('Failed to retry failed items', 'error');
         }
     }
 
@@ -1110,8 +1162,66 @@ class TimelineDrawer {
         }
         const sorted = this.events.slice().sort((a, b) =>
             new Date(a.at).getTime() - new Date(b.at).getTime());
+        const fileSummary = this.renderFileSummary(sorted);
         const items = sorted.map(ev => this.renderItem(ev)).join('');
-        this.body.innerHTML = `<ol class="timeline-list">${items}</ol>`;
+        this.body.innerHTML = `${fileSummary}<ol class="timeline-list">${items}</ol>`;
+    }
+
+    renderFileSummary(events) {
+        const byFile = new Map();
+        for (const ev of events) {
+            if (!ev.file) continue;
+            const name = ev.file;
+            let row = byFile.get(name) || { name, status: 'pending', message: '', at: ev.at };
+            if (ev.kind === 'file_download_started') {
+                row = { ...row, status: 'downloading', at: ev.at };
+            } else if (ev.kind === 'file_download_completed') {
+                row = { ...row, status: 'completed', message: '', at: ev.at };
+            } else if (ev.kind === 'file_download_failed') {
+                row = { ...row, status: 'failed', message: ev.message || '', at: ev.at };
+            } else if (ev.kind === 'file_symlink_completed') {
+                row = { ...row, status: 'completed', message: 'Symlinked', at: ev.at };
+            } else if (ev.kind === 'file_symlink_failed') {
+                row = { ...row, status: 'failed', message: ev.message || 'Symlink failed', at: ev.at };
+            }
+            byFile.set(name, row);
+        }
+        if (byFile.size === 0) return '';
+
+        const rows = [...byFile.values()].sort((a, b) => a.name.localeCompare(b.name));
+        const statusBadge = (status) => {
+            const map = {
+                completed: 'badge-success',
+                failed: 'badge-error',
+                downloading: 'badge-info',
+                pending: 'badge-ghost',
+            };
+            return map[status] || 'badge-ghost';
+        };
+        const statusLabel = (status) => {
+            const map = {
+                completed: 'Completed',
+                failed: 'Failed',
+                downloading: 'Downloading',
+                pending: 'Pending',
+            };
+            return map[status] || status;
+        };
+
+        const list = rows.map(row => `
+            <li class="file-status-row">
+                <span class="file-status-name font-mono text-xs truncate" title="${window.decypharrUtils.escapeHtml(row.name)}">${window.decypharrUtils.escapeHtml(row.name)}</span>
+                <span class="badge badge-sm ${statusBadge(row.status)}">${statusLabel(row.status)}</span>
+                ${row.message ? `<span class="file-status-error text-xs opacity-80 truncate" title="${window.decypharrUtils.escapeHtml(row.message)}">${window.decypharrUtils.escapeHtml(row.message)}</span>` : ''}
+            </li>
+        `).join('');
+
+        return `
+            <div class="file-status-panel mb-4">
+                <div class="text-xs font-semibold uppercase opacity-60 mb-2">Files (${rows.length})</div>
+                <ul class="file-status-list">${list}</ul>
+            </div>
+        `;
     }
 
     renderItem(ev) {
@@ -1123,10 +1233,12 @@ class TimelineDrawer {
         if (ev.duration) meta.push(this.formatDuration(ev.duration));
         if (ev.provider) meta.push(`provider: ${ev.provider}`);
         const icon = this.iconFor(ev.kind);
+        const fileClass = ev.file ? ' timeline-item--file' : '';
         return `
-            <li class="timeline-item" data-kind="${window.decypharrUtils.escapeHtml(ev.kind)}">
+            <li class="timeline-item${fileClass}" data-kind="${window.decypharrUtils.escapeHtml(ev.kind)}">
                 <div class="timeline-marker"><i class="bi ${icon}"></i></div>
                 <div class="timeline-kind">${this.labelFor(ev.kind)}</div>
+                ${ev.file ? `<div class="timeline-file font-mono text-xs opacity-90">${window.decypharrUtils.escapeHtml(ev.file)}</div>` : ''}
                 <div class="timeline-time" title="${window.decypharrUtils.escapeHtml(abs)}">${rel} · ${window.decypharrUtils.escapeHtml(abs)}</div>
                 ${ev.message ? `<div class="timeline-message">${window.decypharrUtils.escapeHtml(ev.message)}</div>` : ''}
                 ${meta.length ? `<div class="timeline-meta">${window.decypharrUtils.escapeHtml(meta.join(' · '))}</div>` : ''}
@@ -1144,7 +1256,16 @@ class TimelineDrawer {
             provider_skipped: 'bi-skip-forward',
             local_download_start: 'bi-arrow-down-circle',
             local_download_done: 'bi-check-circle',
+            file_download_started: 'bi-file-earmark-arrow-down',
+            file_download_completed: 'bi-file-earmark-check',
+            file_download_failed: 'bi-file-earmark-x',
+            file_symlink_completed: 'bi-file-earmark-check',
+            file_symlink_failed: 'bi-file-earmark-x',
             symlinked: 'bi-link-45deg',
+            pending_accepted: 'bi-clock-history',
+            pending_retry_failed: 'bi-arrow-repeat',
+            pending_promoted: 'bi-play-circle',
+            pending_expired: 'bi-hourglass-bottom',
             imported: 'bi-box-arrow-in-down',
             error: 'bi-exclamation-triangle',
             removed: 'bi-trash',
@@ -1162,7 +1283,16 @@ class TimelineDrawer {
             provider_skipped: 'Provider skipped',
             local_download_start: 'Local download started',
             local_download_done: 'Local download finished',
+            file_download_started: 'File download started',
+            file_download_completed: 'File download completed',
+            file_download_failed: 'File download failed',
+            file_symlink_completed: 'File symlinked',
+            file_symlink_failed: 'File symlink failed',
             symlinked: 'Symlinked',
+            pending_accepted: 'Accepted (pending)',
+            pending_retry_failed: 'Pending retry failed',
+            pending_promoted: 'Promoted from pending',
+            pending_expired: 'Pending expired',
             imported: 'Imported by Arr',
             error: 'Error',
             removed: 'Removed',
@@ -1192,6 +1322,7 @@ class TimelineDrawer {
             .map(ev => {
                 const at = new Date(ev.at).toISOString();
                 const parts = [at, this.labelFor(ev.kind)];
+                if (ev.file) parts.push(ev.file);
                 if (ev.message) parts.push(ev.message);
                 return parts.join(' — ');
             }).join('\n');

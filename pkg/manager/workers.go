@@ -320,6 +320,8 @@ func (m *Manager) processPendingEntries(ctx context.Context) {
 		// Attempt to submit to debrid
 		m.retryPendingEntry(ctx, entry)
 	}
+
+	m.processTransientLocalRetries()
 }
 
 // retryPendingEntry attempts to submit a pending entry to an available provider

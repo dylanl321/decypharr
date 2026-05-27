@@ -4,7 +4,35 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap**, 
 
 ## [Unreleased]
 
+### Added
+
+#### Per-provider prefer for torrents / NZBs
+
+- **Debrid providers:** `prefer_torrents` and `prefer_nzbs` checkboxes on each provider in Settings (JSON `prefer_torrents` / `prefer_nzbs`, env `DEBRIDS__N__PREFER_TORRENTS`). Checked providers are tried first on submit; failures fall through to other eligible providers in config order. Overrides the old comma-list UI (advanced `torrent_debrid_order` / `nzb_debrid_order` still work in JSON).
+
 ### Changed
+
+#### Reliability roadmap (blocked providers, partial retry, auth, pending cancel)
+
+- **DMCA blocklist enforced:** `BlockedProviders` on pending/retry entries is now applied in `SendToDebrid` / `SendToNZBDebrid` so blocked providers are skipped on fallback.
+- **Multi-file local pull:** Downloads continue for all files when one fails; manual/auto retry re-pulls only files whose latest timeline status is not `file_download_completed`. Link validation cache is cleared before local retry.
+- **Transient auto-retry:** Background worker retries `downloading` entries with retriable `LastError` (e.g. 502) using the same backoff settings as the pending queue.
+- **Submit errors:** Unknown debrid submit errors default to permanent failure instead of infinite pending.
+- **Fast *arr add:** `arr.Validate()` is skipped on `POST …/torrents/add` and SAB `addfile`; other routes use a 5-minute validation cache per host+token.
+- **Pending cancel:** `POST /api/queue/{hash}/cancel` and queue UI **Cancel** remove pending rows without provider cleanup.
+- **Symlink/strm timeline:** Per-file `file_symlink_completed` / `file_symlink_failed` events in history.
+- **qBit hash casing:** `torrents/info` returns uppercase info hashes (qBittorrent convention).
+
+#### Per-file download history in timeline
+
+- **Timeline events:** Local pulls now record `file_download_started`, `file_download_completed`, and `file_download_failed` per file (with size and duration on success). Applies to debrid HTTP and NNTP NZB multi-file downloads.
+- **History drawer:** Shows a **Files** summary (latest status per file) above the event log; each file event lists the filename in the timeline.
+
+#### Queue retry for failed local downloads
+
+- **Retry failed:** Error-state entries that already finished on debrid (e.g. Torbox 502 during `requestdl`) can be retried from the queue UI without a new Sonarr grab. Retries re-run the local pull using existing provider files; debrid-only failures fall back to resubmit.
+- **HTTP 5xx during pull:** Torbox/API `502`/`503`/`504` responses during local download are treated as transient when possible instead of immediately marking the entry failed.
+- **UI:** Per-row retry for `error` and stalled `downloading` rows; toolbar **Retry Failed** calls `POST /api/queue/retry-all-errors`.
 
 #### *arr add endpoints return before debrid submit
 

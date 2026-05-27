@@ -113,6 +113,10 @@ type Entry struct {
 	BlockedProviders []string   `msgpack:"blocked_providers,omitempty" json:"blocked_providers,omitempty"` // Providers that returned DMCA/451 for this hash
 	NZBContent       []byte     `msgpack:"nzb_content,omitempty" json:"nzb_content,omitempty"`             // Raw NZB content for pending retry
 
+	// RetryFailedFilesOnly is an in-memory flag: next local pull skips files that
+	// already completed per the timeline (not persisted).
+	RetryFailedFilesOnly bool `msgpack:"-" json:"-"`
+
 	// Timeline is an append-only event log surfaced to the UI. It is persisted
 	// in a sidecar store (see Storage.{Get,Put}Timeline) rather than in the
 	// proto Entry record so the existing on-disk format does not change.
@@ -135,6 +139,11 @@ const (
 	TimelineProviderSkipped    TimelineEventKind = "provider_skipped"
 	TimelineLocalDownloadStart TimelineEventKind = "local_download_start"
 	TimelineLocalDownloadDone  TimelineEventKind = "local_download_done"
+	TimelineFileDownloadStart    TimelineEventKind = "file_download_started"
+	TimelineFileDownloadComplete TimelineEventKind = "file_download_completed"
+	TimelineFileDownloadFailed   TimelineEventKind = "file_download_failed"
+	TimelineFileSymlinkComplete  TimelineEventKind = "file_symlink_completed"
+	TimelineFileSymlinkFailed    TimelineEventKind = "file_symlink_failed"
 	TimelineSymlinked          TimelineEventKind = "symlinked"
 	TimelineImported           TimelineEventKind = "imported"
 	TimelineError              TimelineEventKind = "error"
@@ -143,13 +152,14 @@ const (
 
 // MaxTimelineEvents bounds the number of events retained per Entry. Older
 // events rotate out FIFO when the cap is exceeded.
-const MaxTimelineEvents = 64
+const MaxTimelineEvents = 256
 
 // TimelineEvent represents a single lifecycle event for an Entry.
 type TimelineEvent struct {
 	At       time.Time         `msgpack:"at" json:"at"`
 	Kind     TimelineEventKind `msgpack:"kind" json:"kind"`
 	Provider string            `msgpack:"provider,omitempty" json:"provider,omitempty"`
+	File     string            `msgpack:"file,omitempty" json:"file,omitempty"`
 	Message  string            `msgpack:"message,omitempty" json:"message,omitempty"`
 	Bytes    int64             `msgpack:"bytes,omitempty" json:"bytes,omitempty"`
 	Duration int64             `msgpack:"duration,omitempty" json:"duration,omitempty"` // nanoseconds
@@ -169,6 +179,92 @@ func (e *Entry) AppendEvent(kind TimelineEventKind, provider, message string) {
 	}
 	e.Timeline = append(e.Timeline, TimelineEvent{
 		At: now, Kind: kind, Provider: provider, Message: message,
+	})
+	if len(e.Timeline) > MaxTimelineEvents {
+		e.Timeline = e.Timeline[len(e.Timeline)-MaxTimelineEvents:]
+	}
+}
+
+// fileTimelineStatus returns the latest per-file status from timeline events.
+func (e *Entry) fileTimelineStatus() map[string]TimelineEventKind {
+	out := make(map[string]TimelineEventKind)
+	if e == nil {
+		return out
+	}
+	for _, ev := range e.Timeline {
+		if ev.File == "" {
+			continue
+		}
+		switch ev.Kind {
+		case TimelineFileDownloadStart, TimelineFileDownloadComplete, TimelineFileDownloadFailed,
+			TimelineFileSymlinkComplete, TimelineFileSymlinkFailed:
+			out[ev.File] = ev.Kind
+		}
+	}
+	return out
+}
+
+// HasPartialFileFailures is true when some files completed and others failed locally.
+func (e *Entry) HasPartialFileFailures() bool {
+	status := e.fileTimelineStatus()
+	var completed, failed bool
+	for _, kind := range status {
+		switch kind {
+		case TimelineFileDownloadComplete:
+			completed = true
+		case TimelineFileDownloadFailed:
+			failed = true
+		}
+	}
+	return completed && failed
+}
+
+// FilesForLocalRetry returns files that still need a local pull (failed or never started).
+func (e *Entry) FilesForLocalRetry(all []*File) []*File {
+	if e == nil || len(all) == 0 {
+		return all
+	}
+	status := e.fileTimelineStatus()
+	if len(status) == 0 {
+		return all
+	}
+	out := make([]*File, 0, len(all))
+	for _, f := range all {
+		switch status[f.Name] {
+		case TimelineFileDownloadComplete:
+			continue
+		default:
+			out = append(out, f)
+		}
+	}
+	if len(out) == 0 {
+		return all
+	}
+	return out
+}
+
+// AppendFileEvent records per-file download lifecycle events (start, complete, fail).
+func (e *Entry) AppendFileEvent(kind TimelineEventKind, provider, fileName, message string, bytes int64, dur time.Duration) {
+	if fileName == "" {
+		e.AppendEvent(kind, provider, message)
+		return
+	}
+	now := time.Now()
+	if n := len(e.Timeline); n > 0 {
+		last := e.Timeline[n-1]
+		if last.Kind == kind && last.File == fileName && last.Provider == provider &&
+			last.Message == message && now.Sub(last.At) < time.Second {
+			return
+		}
+	}
+	e.Timeline = append(e.Timeline, TimelineEvent{
+		At:       now,
+		Kind:     kind,
+		Provider: provider,
+		File:     fileName,
+		Message:  message,
+		Bytes:    bytes,
+		Duration: int64(dur),
 	})
 	if len(e.Timeline) > MaxTimelineEvents {
 		e.Timeline = e.Timeline[len(e.Timeline)-MaxTimelineEvents:]
