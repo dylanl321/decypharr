@@ -674,6 +674,8 @@ func (tb *Torbox) activeSlotCap(planMax int) int {
 
 // activeUsageCount returns the number of active+seeding torrents and active usenet downloads on the account.
 // Used to determine how many concurrent slots are currently consumed.
+// Items in a "failed" state are excluded — TorBox does not count them against
+// the active slot limit even when download_finished is false.
 func (tb *Torbox) activeUsageCount() (int, error) {
 	active := 0
 
@@ -683,6 +685,9 @@ func (tb *Torbox) activeUsageCount() (int, error) {
 	}
 	if torrentList.Data != nil {
 		for _, t := range *torrentList.Data {
+			if strings.Contains(strings.ToLower(t.DownloadState), "failed") {
+				continue
+			}
 			if t.Active || !t.DownloadFinished {
 				active++
 			}
@@ -695,6 +700,9 @@ func (tb *Torbox) activeUsageCount() (int, error) {
 	}
 	if usenetList.Data != nil {
 		for _, u := range *usenetList.Data {
+			if strings.Contains(strings.ToLower(u.DownloadState), "failed") {
+				continue
+			}
 			if u.Active || !u.DownloadFinished {
 				active++
 			}
