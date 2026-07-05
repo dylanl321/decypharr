@@ -127,12 +127,14 @@ Lower `priority` = higher preference.
 ```json
 {
   "usenet": {
-    "max_connections": 15
+    "max_connections": 15,
+    "processing_max_connections": 15
   }
 }
 ```
 
-- `max_connections`: Per-file/stream connection limit
+- `max_connections`: Per-file streaming connection limit
+- `processing_max_connections`: Per-file parsing and NZB download connection limit
 - Provider `max_connections`: Per-provider limit
 
 **Example:**
@@ -166,7 +168,7 @@ Prefetch buffer for smoother playback. Higher = smoother but more memory.
 }
 ```
 
-- `max_concurrent_nzb`: How many NZBs to process in parallel
+- `max_concurrent_nzb`: How many NZBs to parse in parallel
 - `processing_timeout`: Mark as bad if processing exceeds this
 
 ### Availability Checking
@@ -192,12 +194,14 @@ Use `availability_sample_percent` for repair checks and
 ```json
 {
   "usenet": {
-    "disk_buffer_path": "/cache/usenet/streams"
+    "disk_buffer_path": "/cache/usenet/streams",
+    "buffer_memory": "512MB"
   }
 }
 ```
 
-Streams use disk buffer for assembly. Ensure sufficient disk space.
+Streams use disk buffer for assembly. `buffer_memory` caps the shared RAM used
+by open usenet streaming buffers; set it to `0` to disable the cap.
 
 ## Repair
 
@@ -233,7 +237,7 @@ See [Sabnzbd Integration](./sabnzbd/) for details.
 
 - Increase `processing_timeout` for large files
 - Reduce `availability_sample_percent` for faster checks
-- Increase `max_concurrent_nzb` if CPU allows
+- Increase `max_concurrent_nzb` if CPU and NNTP capacity allow
 
 ### Incomplete Downloads
 
@@ -260,11 +264,13 @@ Full Usenet config with optimal settings:
       }
     ],
     "max_connections": 15,
+    "processing_max_connections": 15,
     "read_ahead": "32MB",
     "processing_timeout": "15m",
     "availability_sample_percent": 5,
-    "max_concurrent_nzb": 3,
+    "max_concurrent_nzb": 2,
     "disk_buffer_path": "/cache/usenet",
+    "buffer_memory": "512MB",
     "skip_repair": false
   }
 }

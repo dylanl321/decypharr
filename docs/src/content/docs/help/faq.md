@@ -179,7 +179,8 @@ Increase connection limits:
 {
   "usenet": {
     "max_connections": 20,
-    "max_concurrent_nzb": 3
+    "processing_max_connections": 20,
+    "max_concurrent_nzb": 2
   }
 }
 ```

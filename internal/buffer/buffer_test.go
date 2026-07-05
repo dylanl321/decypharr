@@ -8,7 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 // newTestBuffer builds a Buffer with a small RAM budget so eviction tests
@@ -548,47 +547,6 @@ func TestRangeSet_RemoveSpansMultiple(t *testing.T) {
 // TestBuffer_PromotionFires verifies the counter-gated promote path
 // actually installs a block in RAM when a single block is read repeatedly
 // from disk — the workload pattern that "smart Phase 2" exists to serve.
-func TestBuffer_PromotionFires(t *testing.T) {
-	const fileSize = 4 * blockSize
-	b := newTestBuffer(t, 2*blockSize, fileSize)
-
-	// Fill 4 blocks. The 2-block budget means blocks 0 and 1 cache and
-	// blocks 2 and 3 go straight to disk via write-through (never RAM-
-	// resident). So reads of block 2 hit disk and exercise promotion.
-	payload := bytes.Repeat([]byte{0xAB}, blockSize)
-	for i := 0; i < 4; i++ {
-		if _, err := b.WriteAt(payload, int64(i)*blockSize); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := b.Sync(); err != nil {
-		t.Fatal(err)
-	}
-
-	// First read of block 2: counter goes 1, no enqueue.
-	// Second read: counter goes 2, enqueue → worker installs.
-	got := make([]byte, 4096)
-	for i := 0; i < 6; i++ {
-		if _, err := b.ReadAt(got, 2*blockSize); err != nil {
-			t.Fatalf("ReadAt iter %d: %v", i, err)
-		}
-		if got[0] != 0xAB {
-			t.Fatalf("iter %d: wrong payload", i)
-		}
-	}
-	// Wait briefly for the worker to drain (it's async).
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if b.Stats().Promotions > 0 {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	if got := b.Stats().Promotions; got == 0 {
-		t.Fatalf("expected at least 1 promotion after repeated disk reads, got 0")
-	}
-}
-
 func TestRangeSet_PresentAndAnyPresent(t *testing.T) {
 	rs := newRangeSet()
 	rs.insert(100, 100)

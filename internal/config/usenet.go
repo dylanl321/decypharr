@@ -45,9 +45,10 @@ type Usenet struct {
 	Debrid    string           `json:"debrid,omitempty"`    // debrid name when backend=debrid
 	Providers []UsenetProvider `json:"providers,omitempty"` // Usenet provider configurations
 	// Per-stream/file configuration
-	MaxConnections int `json:"max_connections,omitempty"` // Maximum concurrent connections per file for parsing and streaming (default: 10)
+	MaxConnections           int `json:"max_connections,omitempty"`            // Maximum concurrent connections per streaming file (default: 15)
+	ProcessingMaxConnections int `json:"processing_max_connections,omitempty"` // Maximum concurrent connections per file for parsing and NZB downloads (default: max_connections)
 	// Read-ahead configuration
-	ReadAhead string `json:"read_ahead,omitempty"` // Bytes to prefetch ahead of reads e.g. "16MB", "32MB" (default: 128MB)
+	ReadAhead string `json:"read_ahead,omitempty"` // Bytes to prefetch ahead of streaming reads e.g. "16MB", "32MB" (default: 16MB)
 	// SocketReadBuffer / SocketWriteBuffer set the per-connection TCP
 	// SO_RCVBUF / SO_SNDBUF (e.g. "4MB"). At high RTT a single connection's
 	// throughput is capped at roughly buffer ÷ RTT, so the receive buffer must
@@ -60,18 +61,38 @@ type Usenet struct {
 	// Processing timeout
 	ProcessingTimeout string `json:"processing_timeout,omitempty"` // Timeout for NZB processing e.g. "5m", "10m" (default: 10m). Mark as bad if exceeded.
 	// Availability check sampling
-	AvailabilitySamplePercent       int `json:"availability_sample_percent,omitempty"`        // Percentage of segments to check during repair (1-100, default: 10)
-	ImportAvailabilitySamplePercent int `json:"import_availability_sample_percent,omitempty"` // Percentage of segments to check when adding an NZB (1-100, default: 1)
+	AvailabilitySamplePercent       int    `json:"availability_sample_percent,omitempty"`        // Percentage of segments to check during repair (1-100, default: 10)
+	ImportAvailabilitySamplePercent int    `json:"import_availability_sample_percent,omitempty"` // Percentage of segments to check when adding an NZB (1-100, default: 1)
+	DiskBufferPath                  string `json:"disk_buffer_path,omitempty"`                   // Path for disk buffer storage (empty = main_path/usenet/streams)
+
 	// Max concurrent NZB processing
-	MaxConcurrentNZB int `json:"max_concurrent_nzb,omitempty"` // Maximum NZBs to process in parallel (default: 2)
+	MaxConcurrentNZB int  `json:"max_concurrent_nzb,omitempty"` // Maximum NZBs to process in parallel (default: 2)
+	SkipRepair       bool `json:"skip_repair,omitempty"`        // Skip repairing nzb/usenet files
 
-	DiskBufferPath string `json:"disk_buffer_path,omitempty"` // Path for disk buffer storage (empty = main_path/usenet/streams)
+	// BufferMemory caps the total RAM the usenet streaming buffers hold across
+	// all open streams, e.g. "512MB". Per-stream buffers stay generous for
+	// smooth playback; this bounds the aggregate so many concurrent streams
+	// can't OOM. Empty = default (512MB); "0" disables the cap.
+	BufferMemory string `json:"buffer_memory,omitempty"`
+}
 
-	SkipRepair bool `json:"skip_repair,omitempty"` // Skip repairing nzb/usenet files
+// BufferMemoryBytes resolves the usenet streaming-buffer RAM cap. Empty ->
+// 512MB default; "0" -> disabled (0).
+func (u Usenet) BufferMemoryBytes() int64 {
+	if u.BufferMemory == "" {
+		return 512 << 20
+	}
+	n, err := ParseSize(u.BufferMemory)
+	if err != nil {
+		return 512 << 20
+	}
+	return n
 }
 
 func (u Usenet) IsZero() bool {
-	return u.Backend == "" && u.Debrid == "" && len(u.Providers) == 0 && u.MaxConnections == 0 && u.ReadAhead == "" && u.ProcessingTimeout == ""
+	return u.Backend == "" && u.Debrid == "" && len(u.Providers) == 0 &&
+		u.MaxConnections == 0 && u.ProcessingMaxConnections == 0 && u.ReadAhead == "" &&
+		u.ProcessingTimeout == "" && u.MaxConcurrentNZB == 0 && !u.SkipRepair && u.BufferMemory == ""
 }
 
 func (c *Config) updateUsenetConfig() {
@@ -81,6 +102,9 @@ func (c *Config) updateUsenetConfig() {
 	// Per-stream configuration defaults
 	if c.Usenet.MaxConnections == 0 {
 		c.Usenet.MaxConnections = 15 // Default: 15 connections per file
+	}
+	if c.Usenet.ProcessingMaxConnections <= 0 {
+		c.Usenet.ProcessingMaxConnections = c.Usenet.MaxConnections
 	}
 
 	// Read-ahead default - bytes to prefetch ahead of reads
@@ -114,11 +138,6 @@ func (c *Config) updateUsenetConfig() {
 		c.Usenet.ImportAvailabilitySamplePercent = 1
 	} else if c.Usenet.ImportAvailabilitySamplePercent > 100 {
 		c.Usenet.ImportAvailabilitySamplePercent = 100
-	}
-
-	// Max concurrent NZB processing default
-	if c.Usenet.MaxConcurrentNZB <= 0 {
-		c.Usenet.MaxConcurrentNZB = 2 // Default: 2 NZBs processed in parallel
 	}
 
 	if c.Usenet.DiskBufferPath == "" {
@@ -212,9 +231,18 @@ func (c *Config) applyUsenetEnvVars() {
 	}
 
 	// Per-stream configuration
+	processingMaxConns := getEnv("USENET__PROCESSING_MAX_CONNECTIONS")
 	if maxConns := getEnv("USENET__MAX_CONNECTIONS"); maxConns != "" {
 		if v, err := strconv.Atoi(maxConns); err == nil {
 			c.Usenet.MaxConnections = v
+			if processingMaxConns == "" {
+				c.Usenet.ProcessingMaxConnections = v
+			}
+		}
+	}
+	if processingMaxConns != "" {
+		if v, err := strconv.Atoi(processingMaxConns); err == nil {
+			c.Usenet.ProcessingMaxConnections = v
 		}
 	}
 
@@ -253,6 +281,10 @@ func (c *Config) applyUsenetEnvVars() {
 
 	if skipRepair := getEnv("USENET__SKIP_REPAIR"); skipRepair != "" {
 		c.Usenet.SkipRepair = parseBool(skipRepair)
+	}
+
+	if bufferMemory := getEnv("USENET__BUFFER_MEMORY"); bufferMemory != "" {
+		c.Usenet.BufferMemory = bufferMemory
 	}
 
 	// Usenet providers array

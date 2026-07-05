@@ -15,6 +15,7 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap**, 
 #### Upstream beta buffer and usenet streaming integration
 
 - **Sparse stream buffer:** Added the upstream sparse disk buffer with block-level memory caching, hole punching, and LRU eviction for lower-memory usenet streaming.
+- **Shared memory caps:** Added pool-level memory budgets for usenet and DFS buffers plus DFS drop-behind controls to keep concurrent streams from growing RSS without bound.
 - **Usenet streaming reliability:** Integrated socket buffer tuning, repair worker pooling, backup-provider fallback semantics, and separate import vs repair availability sampling.
 - **DFS cache compatibility:** Kept cache cleanup/purge observability while moving cached reads onto the shared buffer path.
 

@@ -166,6 +166,7 @@ class ConfigManager {
         if ($('repair.strategy')) $('repair.strategy').value = repair.strategy || 'per_entry';
         if ($('repair.auto_repair')) $('repair.auto_repair').checked = !!repair.auto_repair;
         if ($('repair.notify_on_complete')) $('repair.notify_on_complete').checked = !!repair.notify_on_complete;
+        if ($('repair.skip_nzb_repair')) $('repair.skip_nzb_repair').checked = !!repair.skip_nzb_repair;
     }
 
     collectRepairConfig() {
@@ -184,6 +185,7 @@ class ConfigManager {
             strategy: $('repair.strategy')?.value || 'per_entry',
             auto_repair: $('repair.auto_repair')?.checked || false,
             notify_on_complete: $('repair.notify_on_complete')?.checked || false,
+            skip_nzb_repair: $('repair.skip_nzb_repair')?.checked || false,
             arrs,
         };
     }
@@ -328,7 +330,7 @@ class ConfigManager {
 
         const fields = [
             'cache_dir', 'disk_cache_size', 'cache_expiry', 'cache_cleanup_interval',
-            'chunk_size', 'read_ahead_size', 'daemon_timeout',
+            'buffer_memory', 'chunk_size', 'read_ahead_size', 'drop_behind_margin', 'daemon_timeout',
             'uid', 'gid', 'umask'
         ];
 
@@ -1477,13 +1479,17 @@ class ConfigManager {
             backend: document.querySelector('[name="usenet.backend"]')?.value || 'nntp',
             debrid: document.querySelector('[name="usenet.debrid"]')?.value || '',
             providers: providers,
-            max_connections: parseInt(document.querySelector('[name="usenet.max_connections"]')?.value) || 10,
+            max_connections: parseInt(document.querySelector('[name="usenet.max_connections"]')?.value) || 15,
+            processing_max_connections: parseInt(document.querySelector('[name="usenet.processing_max_connections"]')?.value)
+                || parseInt(document.querySelector('[name="usenet.max_connections"]')?.value)
+                || 15,
             read_ahead: document.querySelector('[name="usenet.read_ahead"]').value || "32MB",
             processing_timeout: document.querySelector('[name="usenet.processing_timeout"]')?.value || "5m",
             availability_sample_percent: parseInt(document.querySelector('[name="usenet.availability_sample_percent"]')?.value) || 10,
             import_availability_sample_percent: parseInt(document.querySelector('[name="usenet.import_availability_sample_percent"]')?.value) || 1,
             max_concurrent_nzb: parseInt(document.querySelector('[name="usenet.max_concurrent_nzb"]')?.value) || 2,
             disk_buffer_path: document.querySelector('[name="usenet.disk_buffer_path"]')?.value || "",
+            buffer_memory: document.querySelector('[name="usenet.buffer_memory"]')?.value || "",
             skip_repair: document.querySelector('[name="usenet.skip_repair"]').checked
         };
     }
@@ -1770,10 +1776,12 @@ class ConfigManager {
         return {
             cache_dir: getElementValue('cache_dir'),
             disk_cache_size: getElementValue('disk_cache_size'),
+            buffer_memory: getElementValue('buffer_memory'),
             cache_expiry: getElementValue('cache_expiry'),
             cache_cleanup_interval: getElementValue('cache_cleanup_interval'),
             chunk_size: getElementValue('chunk_size'),
             read_ahead_size: getElementValue('read_ahead_size'),
+            drop_behind_margin: getElementValue('drop_behind_margin'),
             daemon_timeout: getElementValue('daemon_timeout'),
             uid: getElementValue('uid', 0),
             gid: getElementValue('gid', 0),
@@ -2015,12 +2023,14 @@ class ConfigManager {
         // Populate stream settings
         const streamFields = {
             'max_connections': usenet.max_connections,
+            'processing_max_connections': usenet.processing_max_connections,
             'read_ahead': usenet.read_ahead,
             'processing_timeout': usenet.processing_timeout,
             'availability_sample_percent': usenet.availability_sample_percent,
             'import_availability_sample_percent': usenet.import_availability_sample_percent,
             'max_concurrent_nzb': usenet.max_concurrent_nzb,
             'disk_buffer_path': usenet.disk_buffer_path,
+            'buffer_memory': usenet.buffer_memory,
             'skip_repair': usenet.skip_repair
         };
 

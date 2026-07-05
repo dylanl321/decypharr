@@ -66,7 +66,7 @@ type Entry struct {
 	// Files (from debrid cache)
 	Files map[string]*File `msgpack:"files" json:"files"` // filename -> File details
 
-	State TorrentState `msgpack:"state" json:"state"` // This is for QBitTorrent compatibility
+	State TorrentState `msgpack:"state" json:"state"`                     // This is for QBitTorrent compatibility
 	Phase string       `msgpack:"phase,omitempty" json:"phase,omitempty"` // Lifecycle phase for debugging (see DownloadPhase* constants)
 
 	// Provider State (from active providerEntry)
@@ -75,8 +75,8 @@ type Entry struct {
 
 	DebridProgress float64 `msgpack:"debrid_progress,omitempty" json:"debrid_progress,omitempty"` // Debrid cache progress (0-1)
 	LocalProgress  float64 `msgpack:"local_progress,omitempty" json:"local_progress,omitempty"`   // HTTP pull to NAS (0-1)
-	Speed    int64                     `msgpack:"speed" json:"speed"`       // Download speed
-	Seeders  int                       `msgpack:"seeders" json:"seeders"`   // Number of seeders
+	Speed          int64   `msgpack:"speed" json:"speed"`                                         // Download speed
+	Seeders        int     `msgpack:"seeders" json:"seeders"`                                     // Number of seeders
 
 	IsComplete bool `msgpack:"is_complete" json:"is_complete"` // Ready for use
 	Bad        bool `msgpack:"bad" json:"bad"`                 // Marked as bad/corrupted
@@ -127,27 +127,27 @@ type Entry struct {
 type TimelineEventKind string
 
 const (
-	TimelineAdded              TimelineEventKind = "added"
-	TimelineQueued             TimelineEventKind = "queued"
-	TimelinePendingAccepted    TimelineEventKind = "pending_accepted"
-	TimelinePendingRetryFailed TimelineEventKind = "pending_retry_failed"
-	TimelinePendingPromoted    TimelineEventKind = "pending_promoted"
-	TimelinePendingExpired     TimelineEventKind = "pending_expired"
-	TimelineDebridSubmitted    TimelineEventKind = "debrid_submitted"
-	TimelineDebridReady        TimelineEventKind = "debrid_ready"
-	TimelineProviderBlocked    TimelineEventKind = "provider_blocked"
-	TimelineProviderSkipped    TimelineEventKind = "provider_skipped"
-	TimelineLocalDownloadStart TimelineEventKind = "local_download_start"
-	TimelineLocalDownloadDone  TimelineEventKind = "local_download_done"
+	TimelineAdded                TimelineEventKind = "added"
+	TimelineQueued               TimelineEventKind = "queued"
+	TimelinePendingAccepted      TimelineEventKind = "pending_accepted"
+	TimelinePendingRetryFailed   TimelineEventKind = "pending_retry_failed"
+	TimelinePendingPromoted      TimelineEventKind = "pending_promoted"
+	TimelinePendingExpired       TimelineEventKind = "pending_expired"
+	TimelineDebridSubmitted      TimelineEventKind = "debrid_submitted"
+	TimelineDebridReady          TimelineEventKind = "debrid_ready"
+	TimelineProviderBlocked      TimelineEventKind = "provider_blocked"
+	TimelineProviderSkipped      TimelineEventKind = "provider_skipped"
+	TimelineLocalDownloadStart   TimelineEventKind = "local_download_start"
+	TimelineLocalDownloadDone    TimelineEventKind = "local_download_done"
 	TimelineFileDownloadStart    TimelineEventKind = "file_download_started"
 	TimelineFileDownloadComplete TimelineEventKind = "file_download_completed"
 	TimelineFileDownloadFailed   TimelineEventKind = "file_download_failed"
 	TimelineFileSymlinkComplete  TimelineEventKind = "file_symlink_completed"
 	TimelineFileSymlinkFailed    TimelineEventKind = "file_symlink_failed"
-	TimelineSymlinked          TimelineEventKind = "symlinked"
-	TimelineImported           TimelineEventKind = "imported"
-	TimelineError              TimelineEventKind = "error"
-	TimelineRemoved            TimelineEventKind = "removed"
+	TimelineSymlinked            TimelineEventKind = "symlinked"
+	TimelineImported             TimelineEventKind = "imported"
+	TimelineError                TimelineEventKind = "error"
+	TimelineRemoved              TimelineEventKind = "removed"
 )
 
 // MaxTimelineEvents bounds the number of events retained per Entry. Older
@@ -409,9 +409,9 @@ type ProviderEntry struct {
 	Files map[string]*ProviderFile `msgpack:"files" json:"files"` // filename -> debrid-specific file info
 
 	// Cached data from debrid (avoid re-fetching)
-	DownloadedAt     *time.Time `msgpack:"downloaded_at,omitempty" json:"downloaded_at,omitempty"`           // When download completed on debrid
-	LastProgressAt   time.Time  `msgpack:"last_progress_at,omitempty" json:"last_progress_at,omitempty"`     // Last time progress advanced
-	LastProgressValue float64   `msgpack:"last_progress_value,omitempty" json:"last_progress_value,omitempty"` // Progress at LastProgressAt
+	DownloadedAt      *time.Time `msgpack:"downloaded_at,omitempty" json:"downloaded_at,omitempty"`             // When download completed on debrid
+	LastProgressAt    time.Time  `msgpack:"last_progress_at,omitempty" json:"last_progress_at,omitempty"`       // Last time progress advanced
+	LastProgressValue float64    `msgpack:"last_progress_value,omitempty" json:"last_progress_value,omitempty"` // Progress at LastProgressAt
 }
 
 // NeedsUpdate checks if this placement is stale compared to the remote torrent.
@@ -609,6 +609,7 @@ func (e *Entry) MarkAsCompleted(contentPath string) {
 func (e *Entry) MarkAsError(err error) {
 	e.State = EntryStateError
 	e.Phase = ""
+	e.Status = debridTypes.TorrentStatusError
 	e.IsDownloading = false
 	e.LastError = err.Error()
 	e.ErrorCount++

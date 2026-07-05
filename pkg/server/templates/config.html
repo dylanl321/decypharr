@@ -431,12 +431,22 @@
                                         <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
                                             <div>
                                                 <label class="label" for="usenet.max_connections">
-                                                    <span class="font-medium">Max Connections Per File</span>
+                                                    <span class="font-medium">Streaming Connections Per File</span>
                                                 </label>
                                                 <input type="number" class="input w-full" name="usenet.max_connections"
-                                                       id="usenet.max_connections" min="1" placeholder="10">
+                                                       id="usenet.max_connections" min="1" placeholder="15">
+                                                <span class="text-sm opacity-70">Connections per streaming file
+                                                    (default: 15)</span>
+                                            </div>
+                                            <div>
+                                                <label class="label" for="usenet.processing_max_connections">
+                                                    <span class="font-medium">Processing Connections Per File</span>
+                                                </label>
+                                                <input type="number" class="input w-full"
+                                                       name="usenet.processing_max_connections"
+                                                       id="usenet.processing_max_connections" min="1" placeholder="15">
                                                 <span class="text-sm opacity-70">Connections per file for parsing and
-                                                    streaming (default: 10)</span>
+                                                    NZB downloads (default: streaming connections)</span>
                                             </div>
                                             <div>
                                                 <label class="label" for="usenet.read_ahead">
@@ -496,6 +506,16 @@
                                                        name="usenet.disk_buffer_path" id="usenet.disk_buffer_path"
                                                        placeholder="/cache">
                                                 <span class="text-sm opacity-70">Path for disk buffering during streaming</span>
+                                            </div>
+                                            <div>
+                                                <label class="label" for="usenet.buffer_memory">
+                                                    <span class="font-medium">Buffer Memory</span>
+                                                </label>
+                                                <input type="text" class="input w-full"
+                                                       name="usenet.buffer_memory" id="usenet.buffer_memory"
+                                                       placeholder="512MB">
+                                                <span class="text-sm opacity-70">Total RAM for usenet streaming buffers
+                                                    across all open streams</span>
                                             </div>
                                             <div>
                                                 <label class="label cursor-pointer justify-start gap-3">
@@ -923,6 +943,16 @@
                                             </div>
 
                                             <div>
+                                                <label class="label" for="mount.dfs.buffer_memory">
+                                                    <span class="font-medium">Buffer Memory</span>
+                                                </label>
+                                                <input type="text" class="input w-full" name="mount.dfs.buffer_memory"
+                                                       id="mount.dfs.buffer_memory" placeholder="512MB">
+                                                <span class="text-sm opacity-70">Total RAM for DFS streaming buffers
+                                                    across all open files</span>
+                                            </div>
+
+                                            <div>
                                                 <label class="label" for="mount.dfs.cache_expiry">
                                                     <span class="font-medium">Cache Expiry</span>
                                                 </label>
@@ -959,6 +989,17 @@
                                                 <input type="text" class="input w-full" name="mount.dfs.read_ahead_size"
                                                        id="mount.dfs.read_ahead_size" placeholder="128MB">
                                                 <span class="text-sm opacity-70">Read ahead buffer size</span>
+                                            </div>
+
+                                            <div>
+                                                <label class="label" for="mount.dfs.drop_behind_margin">
+                                                    <span class="font-medium">Drop Behind Margin</span>
+                                                </label>
+                                                <input type="text" class="input w-full"
+                                                       name="mount.dfs.drop_behind_margin"
+                                                       id="mount.dfs.drop_behind_margin" placeholder="256MB">
+                                                <span class="text-sm opacity-70">Drop page cache behind streaming reads
+                                                    when memory is tight</span>
                                             </div>
 
                                             <div>
@@ -1474,6 +1515,11 @@
                                 <input type="checkbox" class="checkbox checkbox-primary checkbox-sm"
                                        id="repair.notify_on_complete" name="repair.notify_on_complete">
                                 <span class="label-text font-medium">Notify on completion</span>
+                            </label>
+                            <label class="label cursor-pointer justify-start gap-3">
+                                <input type="checkbox" class="checkbox checkbox-primary checkbox-sm"
+                                       id="repair.skip_nzb_repair" name="repair.skip_nzb_repair">
+                                <span class="label-text font-medium">Skip NZB repair</span>
                             </label>
                         </div>
                     </div>
