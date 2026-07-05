@@ -166,6 +166,7 @@ class StatsPage {
                     const activeFiles = detail.active_files || 0;
                     const totalFiles = detail.total_files || 0;
                     const cacheItems = detail.cache_item_count || 0;
+                    const activeCacheItems = detail.cache_active_item_count || 0;
                     const cacheTotalSize = detail.cache_total_size || 0;
                     const cacheMaxSize = detail.cache_max_size || 0;
                     const cacheType = (detail.cache_type || 'vfs').toUpperCase();
@@ -224,16 +225,39 @@ class StatsPage {
                             </div>
                         </div>
         
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+                        <div class="flex flex-wrap items-center justify-between gap-3 mt-6 mb-3">
+                            <h3 class="font-semibold text-base">Cache Storage</h3>
+                            <div class="mount-cache-actions">
+                                <button type="button" class="btn btn-outline btn-sm mount-cache-action-btn" data-run-cache-cleanup>
+                                    <i class="bi bi-play-circle"></i>
+                                    Run Cleanup
+                                </button>
+                                <button type="button"
+                                        class="btn btn-outline btn-sm mount-cache-action-btn"
+                                        data-purge-cache
+                                        data-cache-items="${cacheItems}"
+                                        data-cache-size="${cacheTotalSize}">
+                                    <i class="bi bi-trash3"></i>
+                                    Purge Cache
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
                             <div class="stat">
-                                <div class="stat-title">Cache Items</div>
+                                <div class="stat-title">Cached Files</div>
                                 <div class="stat-value text-sm">${formatNumber(cacheItems)}</div>
-                                <div class="stat-desc">${cacheType} cache</div>
+                                <div class="stat-desc">Stored on disk</div>
                             </div>
                             <div class="stat">
                                 <div class="stat-title">Cache Utilization</div>
                                 <div class="stat-value text-sm ${cacheUsageTextClass}">${cacheUtilizationPercent}%</div>
                                 <div class="stat-desc">${window.decypharrUtils.formatBytes(cacheTotalSize)} / ${window.decypharrUtils.formatBytes(cacheMaxSize)}</div>
+                            </div>
+                            <div class="stat">
+                                <div class="stat-title">Loaded Cache Items</div>
+                                <div class="stat-value text-sm text-accent">${formatNumber(activeCacheItems)}</div>
+                                <div class="stat-desc">Resident in ${cacheType} memory</div>
                             </div>
                     `;
         
@@ -254,6 +278,113 @@ class StatsPage {
                     html += '</div>';
         
                     contentEl.innerHTML = html;
+
+                    const cleanupButton = contentEl.querySelector('[data-run-cache-cleanup]');
+                    if (cleanupButton) {
+                        cleanupButton.addEventListener('click', () => runDFSCacheCleanup(cleanupButton));
+                    }
+                    const purgeButton = contentEl.querySelector('[data-purge-cache]');
+                    if (purgeButton) {
+                        purgeButton.addEventListener('click', () => runDFSCachePurge(purgeButton));
+                    }
+                }
+
+                async function runDFSCacheCleanup(button) {
+                    try {
+                        button.disabled = true;
+                        button.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Running...';
+
+                        const response = await window.decypharrUtils.fetcher('/api/mount/cache/cleanup', {
+                            method: 'POST',
+                        });
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}`);
+                        }
+                        const result = await response.json();
+                        const cache = result.cache || {};
+                        const freed = window.decypharrUtils.formatBytes(cache.cleanup_freed_bytes || 0);
+                        window.decypharrUtils.createToast(`Cache cleanup complete: freed ${freed}`, 'success');
+                        loadStats();
+                    } catch (error) {
+                        window.decypharrUtils.createToast(`Cache cleanup failed: ${error.message}`, 'error');
+                    } finally {
+                        button.disabled = false;
+                        button.innerHTML = '<i class="bi bi-play-circle"></i> Run Cleanup';
+                    }
+                }
+
+                function confirmDFSCachePurge(button) {
+                    const modal = document.getElementById('purge-cache-modal');
+                    const confirmButton = document.getElementById('confirm-purge-cache');
+                    const cancelButton = document.getElementById('cancel-purge-cache');
+                    const filesEl = document.getElementById('purge-cache-files');
+                    const diskUsedEl = document.getElementById('purge-cache-disk-used');
+                    if (!modal || !confirmButton || !cancelButton) {
+                        return Promise.resolve(false);
+                    }
+
+                    const cachedFiles = parseInt(button.dataset.cacheItems || '0', 10) || 0;
+                    const cacheSize = parseInt(button.dataset.cacheSize || '0', 10) || 0;
+                    if (filesEl) filesEl.textContent = formatNumber(cachedFiles);
+                    if (diskUsedEl) diskUsedEl.textContent = window.decypharrUtils.formatBytes(cacheSize);
+
+                    return new Promise(resolve => {
+                        let settled = false;
+                        const finish = confirmed => {
+                            if (settled) return;
+                            settled = true;
+                            confirmButton.removeEventListener('click', onConfirm);
+                            cancelButton.removeEventListener('click', onCancel);
+                            modal.removeEventListener('close', onCancel);
+                            if (modal.open) {
+                                modal.close();
+                            }
+                            resolve(confirmed);
+                        };
+                        const onConfirm = () => finish(true);
+                        const onCancel = () => finish(false);
+
+                        confirmButton.addEventListener('click', onConfirm);
+                        cancelButton.addEventListener('click', onCancel);
+                        modal.addEventListener('close', onCancel);
+
+                        if (typeof modal.showModal === 'function') {
+                            modal.showModal();
+                        } else {
+                            modal.setAttribute('open', '');
+                        }
+                    });
+                }
+
+                async function runDFSCachePurge(button) {
+                    const confirmed = await confirmDFSCachePurge(button);
+                    if (!confirmed) {
+                        return;
+                    }
+
+                    try {
+                        button.disabled = true;
+                        button.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Purging...';
+
+                        const response = await window.decypharrUtils.fetcher('/api/mount/cache/purge', {
+                            method: 'POST',
+                        });
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}`);
+                        }
+                        const result = await response.json();
+                        const cache = result.cache || {};
+                        const freed = window.decypharrUtils.formatBytes(cache.purge_freed_bytes || 0);
+                        const skipped = cache.purge_skipped_busy_items || 0;
+                        const skippedText = skipped > 0 ? `, skipped ${formatNumber(skipped)} active` : '';
+                        window.decypharrUtils.createToast(`Cache purge complete: freed ${freed}${skippedText}`, 'success');
+                        loadStats();
+                    } catch (error) {
+                        window.decypharrUtils.createToast(`Cache purge failed: ${error.message}`, 'error');
+                    } finally {
+                        button.disabled = false;
+                        button.innerHTML = '<i class="bi bi-trash3"></i> Purge Cache';
+                    }
                 }
         
                 function updateRcloneStats(rclone, contentEl) {

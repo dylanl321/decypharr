@@ -6,11 +6,22 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap**, 
 
 ### Added
 
+#### Upstream beta safe integrations
+
+- **Premiumize provider:** Added Premiumize as a debrid provider across backend registration, setup/config UI, docs, and provider lists.
+- **DFS cache maintenance:** Added disk-vs-active cache item stats plus manual cleanup and purge actions for DFS cache observability.
+- **Arr queue cleanup policy:** Added global `queue_cleanup.rules` with built-in catalog rules, custom status-message matches, Web UI controls, JSON config, and env var overrides.
+
 #### Per-provider prefer for torrents / NZBs
 
 - **Debrid providers:** `prefer_torrents` and `prefer_nzbs` checkboxes on each provider in Settings (JSON `prefer_torrents` / `prefer_nzbs`, env `DEBRIDS__N__PREFER_TORRENTS`). Checked providers are tried first on submit; failures fall through to other eligible providers in config order. Overrides the old comma-list UI (advanced `torrent_debrid_order` / `nzb_debrid_order` still work in JSON).
 
 ### Changed
+
+#### Upstream beta minor fixes
+
+- **TorBox status mapping:** Treat `incomplete` as an active/downloading state instead of falling through to an error-like state.
+- **NZB cleanup:** Remove completed NZB source files and processing markers after metadata is saved.
 
 #### Reliability roadmap (blocked providers, partial retry, auth, pending cancel)
 

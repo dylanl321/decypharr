@@ -1,4 +1,20 @@
 ﻿{{ define "stats" }}
+<style>
+    #mount-content .mount-cache-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: flex-end;
+    }
+
+    #mount-content .mount-cache-action-btn {
+        min-height: 2rem;
+    }
+
+    #purge-cache-modal .purge-cache-summary {
+        border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+    }
+</style>
 <div class="space-y-6">
     <div class="page-header">
         <h1 class="text-2xl sm:text-3xl font-bold text-primary">System Statistics</h1>
@@ -300,4 +316,47 @@
         </button>
     </div>
 </div>
+
+<dialog id="purge-cache-modal" class="modal">
+    <div class="modal-box max-w-lg">
+        <form method="dialog">
+            <button class="btn btn-sm btn-circle btn-ghost absolute right-3 top-3" aria-label="Close">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </form>
+        <h3 class="font-bold text-lg flex items-center gap-2 mb-3">
+            <i class="bi bi-trash3 text-error"></i>
+            Purge DFS Cache
+        </h3>
+        <p class="text-sm text-base-content/70 mb-4">
+            This removes cached disk files that are not currently open or streaming. Active files will be skipped.
+        </p>
+        <div class="purge-cache-summary rounded-lg bg-base-200/50 p-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <div class="text-xs text-base-content/60">Cached Files</div>
+                    <div class="font-bold text-info text-xl" id="purge-cache-files">0</div>
+                </div>
+                <div>
+                    <div class="text-xs text-base-content/60">Disk Used</div>
+                    <div class="font-bold text-warning text-xl" id="purge-cache-disk-used">0 B</div>
+                </div>
+            </div>
+        </div>
+        <div class="alert alert-warning mt-4">
+            <i class="bi bi-exclamation-triangle"></i>
+            <span>Cached files may need to be downloaded again after purging.</span>
+        </div>
+        <div class="modal-action">
+            <button type="button" class="btn btn-ghost" id="cancel-purge-cache">Cancel</button>
+            <button type="button" class="btn btn-error" id="confirm-purge-cache">
+                <i class="bi bi-trash3"></i>
+                Purge Cache
+            </button>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
 {{ end }}

@@ -6,15 +6,62 @@ import (
 	gourl "net/url"
 	"strconv"
 	"strings"
+
+	"github.com/sirrobot01/decypharr/internal/config"
+	"github.com/sirrobot01/decypharr/internal/logger"
 )
 
 type QueueAction string
 
 const (
-	QueueActionNone      QueueAction = ""
-	QueueActionBlocklist QueueAction = "blocklist"
-	QueueActionImport    QueueAction = "import"
+	QueueActionNone              QueueAction = ""
+	QueueActionImport            QueueAction = "import"
+	QueueActionBlocklist         QueueAction = "blacklist"
+	QueueActionBlocklistResearch QueueAction = "blacklist_research"
 )
+
+func actionFromConfig(action string) QueueAction {
+	switch action {
+	case string(QueueActionImport):
+		return QueueActionImport
+	case string(QueueActionBlocklist):
+		return QueueActionBlocklist
+	case string(QueueActionBlocklistResearch):
+		return QueueActionBlocklistResearch
+	default:
+		return QueueActionNone
+	}
+}
+
+var catalogMatchers = map[string]func(QueueSchema, string) bool{
+	"failed_download": func(q QueueSchema, _ string) bool {
+		return strings.EqualFold(q.Status, "failed")
+	},
+	"title_mismatch": func(_ QueueSchema, text string) bool {
+		return strings.Contains(text, "title mismatch")
+	},
+	"matched_by_id": func(_ QueueSchema, text string) bool {
+		return strings.Contains(text, "matched to") && strings.Contains(text, "by id")
+	},
+	"unable_to_parse": func(_ QueueSchema, text string) bool {
+		return strings.Contains(text, "unable to parse download")
+	},
+	"no_eligible_files": func(_ QueueSchema, text string) bool {
+		return strings.Contains(text, "no files found are eligible")
+	},
+	"episodes_missing": func(_ QueueSchema, text string) bool {
+		return strings.Contains(text, "not imported or missing from the release")
+	},
+	"file_empty": func(_ QueueSchema, text string) bool {
+		return strings.Contains(text, "file is empty")
+	},
+	"invalid_local_path": func(_ QueueSchema, text string) bool {
+		return strings.Contains(text, "is not a valid local path")
+	},
+	"not_grabbed": func(_ QueueSchema, text string) bool {
+		return strings.Contains(text, "not in a category")
+	},
+}
 
 type HistorySchema struct {
 	Page          int             `json:"page"`
@@ -113,31 +160,31 @@ func (a *Arr) GetQueue() []QueueSchema {
 	return results
 }
 
-func queueFilter(q QueueSchema) QueueAction {
-	// Check for failed downloads(for both usenet and torrent)
-	if q.Status == "failed" {
-		return QueueActionBlocklist
+func queueItemText(q QueueSchema) string {
+	var b strings.Builder
+	for _, msg := range q.StatusMessages {
+		b.WriteString(" ")
+		b.WriteString(msg.Title)
+		for _, line := range msg.Messages {
+			b.WriteString(" ")
+			b.WriteString(line)
+		}
 	}
+	return strings.ToLower(b.String())
+}
 
-	// Check for completed downloads with warning status and import pending state
-	if q.Status == "completed" && q.TrackedDownloadStatus == "warning" {
-		// Check status messages for specific errors
-		messages := q.StatusMessages
-		if len(messages) > 0 {
-			for _, m := range messages {
-				if strings.Contains(strings.ToLower(strings.Join(m.Messages, " ")), "no files found are eligible") {
-					return QueueActionBlocklist
-				}
-				if strings.Contains(strings.ToLower(m.Title), "one or more episodes expected in this release were not imported or missing from the release") {
-					return QueueActionBlocklist
-				}
-				if strings.Contains(strings.ToLower(strings.Join(m.Messages, " ")), "downloaded file is empty") {
-					return QueueActionBlocklist
-				}
-				if strings.Contains(strings.ToLower(strings.Join(m.Messages, " ")), "found matching series via grab history, but release was matched to series by id") {
-					return QueueActionImport
-				}
+func queueFilter(q QueueSchema, rules []config.QueueCleanupRule) QueueAction {
+	text := queueItemText(q)
+	for _, rule := range rules {
+		if rule.ID != "" {
+			if matcher, ok := catalogMatchers[rule.ID]; ok && matcher(q, text) {
+				return actionFromConfig(rule.Action)
 			}
+			continue
+		}
+		match := strings.ToLower(strings.TrimSpace(rule.Match))
+		if match != "" && strings.Contains(text, match) {
+			return actionFromConfig(rule.Action)
 		}
 	}
 	return QueueActionNone
@@ -147,29 +194,40 @@ func (a *Arr) CleanupQueue() error {
 	if a == nil {
 		return fmt.Errorf("arr not configured")
 	}
+	l := logger.New("arr")
+	rules := config.Get().QueueCleanup.Rules
+	if len(rules) == 0 {
+		rules = config.DefaultQueueCleanupRules()
+	}
 	queue := a.GetQueue()
-	blacklists := make(map[int]bool)
+	blacklistOnly := make(map[int]bool)
+	blacklistResearch := make(map[int]bool)
 	manualImports := make(map[string]bool)
 	for _, q := range queue {
-		switch queueFilter(q) {
+		switch queueFilter(q, rules) {
 		case QueueActionBlocklist:
-			blacklists[q.Id] = true
+			blacklistOnly[q.Id] = true
+		case QueueActionBlocklistResearch:
+			blacklistResearch[q.Id] = true
 		case QueueActionImport:
 			manualImports[q.DownloadId] = true
 		}
 	}
 
-	if len(blacklists) > 0 {
-		if err := a.BlackListAndResearchItems(blacklists); err != nil {
-			// log error
-			fmt.Println("Error during blacklist and research:", err)
+	if len(blacklistOnly) > 0 {
+		if err := a.BlackListItems(blacklistOnly); err != nil {
+			l.Error().Err(err).Str("arr", a.Name).Msg("queue cleanup: blacklist failed")
+		}
+	}
+	if len(blacklistResearch) > 0 {
+		if err := a.BlackListAndResearchItems(blacklistResearch); err != nil {
+			l.Error().Err(err).Str("arr", a.Name).Msg("queue cleanup: blacklist and research failed")
 		}
 	}
 	if len(manualImports) > 0 {
 		go func() {
 			if err := a.ManualImportItems(manualImports); err != nil {
-				// log error
-				fmt.Println("Error during manual import:", err)
+				l.Error().Err(err).Str("arr", a.Name).Msg("queue cleanup: manual import failed")
 			}
 		}()
 	}
@@ -241,8 +299,8 @@ func (a *Arr) MarkHistoryFailed(historyID int) error {
 	return nil
 }
 
-func (a *Arr) BlackListAndResearchItems(items map[int]bool) error {
-	queueIDs := make([]int, 0)
+func (a *Arr) removeQueueItems(items map[int]bool, blocklist, skipRedownload bool) error {
+	queueIDs := make([]int, 0, len(items))
 	for id := range items {
 		queueIDs = append(queueIDs, id)
 	}
@@ -253,8 +311,8 @@ func (a *Arr) BlackListAndResearchItems(items map[int]bool) error {
 	}
 	query := gourl.Values{}
 	query.Add("removeFromClient", "true")
-	query.Add("blocklist", "true")
-	query.Add("skipRedownload", "false")
+	query.Add("blocklist", strconv.FormatBool(blocklist))
+	query.Add("skipRedownload", strconv.FormatBool(skipRedownload))
 	query.Add("changeCategory", "false")
 	url := "api/v3/queue/bulk" + "?" + query.Encode()
 
@@ -263,6 +321,14 @@ func (a *Arr) BlackListAndResearchItems(items map[int]bool) error {
 		return err
 	}
 	return nil
+}
+
+func (a *Arr) BlackListItems(items map[int]bool) error {
+	return a.removeQueueItems(items, true, true)
+}
+
+func (a *Arr) BlackListAndResearchItems(items map[int]bool) error {
+	return a.removeQueueItems(items, true, false)
 }
 
 func (a *Arr) ManualImportItems(items map[string]bool) error {

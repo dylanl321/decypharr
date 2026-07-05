@@ -86,6 +86,62 @@ func (a Arr) IsZero() bool {
 	return a.Name == "" && a.Host == "" && a.Token == "" && !a.Cleanup && !a.SkipRepair && a.DownloadUncached == nil && a.SelectedDebrid == "" && a.Source == ""
 }
 
+// QueueCleanup is the global policy that maps Arr queue warnings/errors to
+// cleanup actions.
+type QueueCleanup struct {
+	Rules []QueueCleanupRule `json:"rules,omitempty"`
+}
+
+// QueueCleanupRule maps a queue issue to an action. Catalog rules use ID;
+// custom rules use Match as a case-insensitive status-message substring.
+type QueueCleanupRule struct {
+	ID     string `json:"id,omitempty"`
+	Match  string `json:"match,omitempty"`
+	Action string `json:"action,omitempty"` // "" | "import" | "blacklist" | "blacklist_research"
+}
+
+func DefaultQueueCleanupRules() []QueueCleanupRule {
+	return []QueueCleanupRule{
+		{ID: "failed_download", Match: "Failed download", Action: "blacklist_research"},
+		{ID: "title_mismatch", Match: "Title mismatch; automatic import is not possible", Action: "import"},
+		{ID: "matched_by_id", Match: "Matched to series/movie by ID", Action: "import"},
+		{ID: "unable_to_parse", Match: "Unable to parse download", Action: "blacklist_research"},
+		{ID: "no_eligible_files", Match: "No files found are eligible for import", Action: "blacklist_research"},
+		{ID: "episodes_missing", Match: "Episodes not imported or missing from the release", Action: "blacklist_research"},
+		{ID: "file_empty", Match: "Downloaded file is empty", Action: "blacklist_research"},
+		{ID: "invalid_local_path", Match: "Not a valid local path (remote path mapping)", Action: ""},
+		{ID: "not_grabbed", Match: "Not grabbed by the Arr / no category", Action: ""},
+	}
+}
+
+func mergeQueueCleanupRules(rules []QueueCleanupRule) []QueueCleanupRule {
+	defaults := DefaultQueueCleanupRules()
+	if len(rules) == 0 {
+		return defaults
+	}
+
+	stored := make(map[string]QueueCleanupRule, len(rules))
+	custom := make([]QueueCleanupRule, 0)
+	for _, rule := range rules {
+		if rule.ID == "" {
+			if strings.TrimSpace(rule.Match) != "" {
+				custom = append(custom, rule)
+			}
+			continue
+		}
+		stored[rule.ID] = rule
+	}
+
+	merged := make([]QueueCleanupRule, 0, len(defaults)+len(custom))
+	for _, rule := range defaults {
+		if saved, ok := stored[rule.ID]; ok {
+			rule.Action = saved.Action
+		}
+		merged = append(merged, rule)
+	}
+	return append(merged, custom...)
+}
+
 type CustomFolders struct {
 	Filters map[string]string `json:"filters,omitempty"`
 }
@@ -180,6 +236,9 @@ type Config struct {
 
 	Repair RepairConfig `json:"repair,omitzero"`
 
+	// QueueCleanup is the global Arr queue-cleanup policy.
+	QueueCleanup QueueCleanup `json:"queue_cleanup,omitempty"`
+
 	// PreferCachedProvider runs parallel cache checks before submit (nil/absent = enabled).
 	PreferCachedProvider *bool `json:"prefer_cached_provider,omitempty"`
 
@@ -214,9 +273,9 @@ type Config struct {
 	CleanupOnComplete CleanupOnComplete `json:"cleanup_on_complete,omitzero"`
 
 	// Pending queue configuration (accept-then-process backlog)
-	MaxPendingHours                 int `json:"max_pending_hours,omitempty"`                     // Hours before timing out pending entries (default: 6)
-	PendingRetryIntervalSeconds     int `json:"pending_retry_interval_seconds,omitempty"`        // Initial retry interval (default: 30)
-	PendingMaxRetryIntervalSeconds  int `json:"pending_max_retry_interval_seconds,omitempty"`    // Max retry interval with exponential backoff (default: 900 = 15min)
+	MaxPendingHours                int `json:"max_pending_hours,omitempty"`                  // Hours before timing out pending entries (default: 6)
+	PendingRetryIntervalSeconds    int `json:"pending_retry_interval_seconds,omitempty"`     // Initial retry interval (default: 30)
+	PendingMaxRetryIntervalSeconds int `json:"pending_max_retry_interval_seconds,omitempty"` // Max retry interval with exponential backoff (default: 900 = 15min)
 }
 
 // CleanupOnComplete controls what happens after an entry finishes the local action.
@@ -554,6 +613,8 @@ func (c *Config) setDefaults() {
 	if c.Retries == 0 {
 		c.Retries = 3 // Default to 3 consecutive errors before switching
 	}
+
+	c.QueueCleanup.Rules = mergeQueueCleanupRules(c.QueueCleanup.Rules)
 
 	// Basic defaults
 	if c.URLBase == "" {

@@ -130,6 +130,19 @@ Set in `config.json`:
 }
 ```
 
+## Queue Cleanup
+
+Decypharr can monitor connected Arr queues for releases that cannot import automatically, then apply a global cleanup policy from **Settings → Arrs → Queue Cleanup Actions**.
+
+| Action | What it does |
+|--------|--------------|
+| Ignore | Leave the item in the queue |
+| Force import | Try a manual import of the downloaded files |
+| Blacklist only | Blocklist and remove the release without a replacement search |
+| Blacklist + research | Blocklist, remove, and search for a replacement |
+
+Known issues are matched before custom rules. Custom rules match status-message text case-insensitively, so a rule such as `stalled with no connections` can target provider-specific queue warnings.
+
 ## Auto-Detection
 
 Decypharr can auto-detect Arrs that connect to it:

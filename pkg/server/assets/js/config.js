@@ -52,6 +52,36 @@ class ConfigManager {
         if (addCatBtn) {
             addCatBtn.addEventListener('click', () => this.addCategoryPathRow());
         }
+        const addRuleBtn = document.getElementById('addQueueCleanupRuleBtn');
+        if (addRuleBtn) {
+            addRuleBtn.addEventListener('click', () => this.addQueueCleanupCustomRow());
+        }
+    }
+
+    get queueCleanupCatalog() {
+        return [
+            {id: 'failed_download', label: 'Failed download'},
+            {id: 'title_mismatch', label: 'Title mismatch (automatic import not possible)'},
+            {id: 'matched_by_id', label: 'Release matched to series/movie by ID'},
+            {id: 'unable_to_parse', label: 'Unable to parse download'},
+            {id: 'no_eligible_files', label: 'No files eligible for import'},
+            {id: 'episodes_missing', label: 'Episodes missing / not imported from release'},
+            {id: 'file_empty', label: 'Downloaded file is empty'},
+            {id: 'invalid_local_path', label: 'Invalid local path (remote path mapping)'},
+            {id: 'not_grabbed', label: 'Not grabbed by the Arr / no category'},
+        ];
+    }
+
+    queueCleanupActionOptions(selected) {
+        const opts = [
+            {value: '', label: 'Ignore'},
+            {value: 'import', label: 'Force import'},
+            {value: 'blacklist', label: 'Blacklist only'},
+            {value: 'blacklist_research', label: 'Blacklist + research'},
+        ];
+        return opts.map((opt) =>
+            `<option value="${opt.value}" ${opt.value === (selected || '') ? 'selected' : ''}>${opt.label}</option>`
+        ).join('');
     }
 
     async loadConfiguration() {
@@ -94,6 +124,7 @@ class ConfigManager {
         if (config.arrs && Array.isArray(config.arrs)) {
             config.arrs.forEach(arr => this.addArrConfig(arr));
         }
+        this.populateQueueCleanup(config.queue_cleanup);
 
         // Load rclone config
         this.populateMountSettings(config.mount);
@@ -422,6 +453,7 @@ class ConfigManager {
                                 <option value="alldebrid">AllDebrid</option>
                                 <option value="debridlink">Debrid Link</option>
                                 <option value="torbox">Torbox</option>
+                                <option value="premiumize">Premiumize</option>
                             </select>
                         </div>
                         
@@ -1248,6 +1280,7 @@ class ConfigManager {
 
             // Arr configurations
             arrs: this.collectArrConfigs(),
+            queue_cleanup: this.collectQueueCleanup(),
 
             // Mount configuration
             mount: this.collectMountConfig(),
@@ -1579,6 +1612,73 @@ class ConfigManager {
         });
 
         return arrs;
+    }
+
+    populateQueueCleanup(queueCleanup) {
+        const catalogEl = document.getElementById('queueCleanupCatalog');
+        const customEl = document.getElementById('queueCleanupCustom');
+        if (!catalogEl || !customEl) return;
+
+        const rules = (queueCleanup && Array.isArray(queueCleanup.rules)) ? queueCleanup.rules : [];
+        const savedActions = {};
+        const customRules = [];
+        rules.forEach((rule) => {
+            if (rule && rule.id) {
+                savedActions[rule.id] = rule.action || '';
+            } else if (rule && (rule.match || '').trim()) {
+                customRules.push(rule);
+            }
+        });
+
+        const esc = window.decypharrUtils.escapeHtml;
+        catalogEl.innerHTML = this.queueCleanupCatalog.map((rule) => {
+            const action = Object.prototype.hasOwnProperty.call(savedActions, rule.id) ? savedActions[rule.id] : '';
+            return `
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-2 md:items-center px-3 py-3 even:bg-base-200/40" data-rule-id="${rule.id}">
+                    <span class="md:col-span-3 text-sm leading-snug min-w-0">${esc(rule.label)}</span>
+                    <select class="md:col-span-2 select select-sm w-full queue-cleanup-action">
+                        ${this.queueCleanupActionOptions(action)}
+                    </select>
+                </div>`;
+        }).join('');
+
+        customEl.innerHTML = '';
+        customRules.forEach((rule) => this.addQueueCleanupCustomRow(rule.match, rule.action));
+    }
+
+    addQueueCleanupCustomRow(match = '', action = '') {
+        const customEl = document.getElementById('queueCleanupCustom');
+        if (!customEl) return;
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-1 md:grid-cols-12 gap-2 queue-cleanup-custom-row';
+        row.innerHTML = `
+            <input type="text" class="md:col-span-7 input input-sm w-full min-w-0 queue-cleanup-match"
+                   placeholder="text in status message, e.g. stalled"
+                   value="${window.decypharrUtils.escapeHtml(match)}">
+            <select class="md:col-span-4 select select-sm w-full queue-cleanup-action">
+                ${this.queueCleanupActionOptions(action)}
+            </select>
+            <button type="button" class="md:col-span-1 btn btn-sm btn-square btn-ghost text-error queue-cleanup-remove" aria-label="Remove custom queue cleanup rule" title="Remove rule">
+                <i class="bi bi-trash"></i>
+            </button>`;
+        row.querySelector('.queue-cleanup-remove').addEventListener('click', () => row.remove());
+        customEl.appendChild(row);
+    }
+
+    collectQueueCleanup() {
+        const rules = [];
+        document.querySelectorAll('#queueCleanupCatalog [data-rule-id]').forEach((rowEl) => {
+            const id = rowEl.getAttribute('data-rule-id');
+            const action = rowEl.querySelector('.queue-cleanup-action')?.value || '';
+            rules.push({id, action});
+        });
+        document.querySelectorAll('#queueCleanupCustom .queue-cleanup-custom-row').forEach((rowEl) => {
+            const match = (rowEl.querySelector('.queue-cleanup-match')?.value || '').trim();
+            if (!match) return;
+            const action = rowEl.querySelector('.queue-cleanup-action')?.value || '';
+            rules.push({match, action});
+        });
+        return {rules};
     }
 
     collectMountConfig() {

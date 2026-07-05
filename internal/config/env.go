@@ -137,6 +137,25 @@ func (c *Config) applyEnvOverrides() {
 		}
 	}
 
+	queueCleanupRules := make([]QueueCleanupRule, 0)
+	for i := 0; i < 100; i++ {
+		prefix := fmt.Sprintf("QUEUE_CLEANUP__RULES__%d__", i)
+		id := getEnv(prefix + "ID")
+		match := getEnv(prefix + "MATCH")
+		action := getEnv(prefix + "ACTION")
+		if id == "" && match == "" && action == "" {
+			break
+		}
+		queueCleanupRules = append(queueCleanupRules, QueueCleanupRule{
+			ID:     id,
+			Match:  match,
+			Action: action,
+		})
+	}
+	if len(queueCleanupRules) > 0 {
+		c.QueueCleanup.Rules = queueCleanupRules
+	}
+
 	// Pending queue configuration
 	if val := getEnv("MAX_PENDING_HOURS"); val != "" {
 		if v, err := strconv.Atoi(val); err == nil {

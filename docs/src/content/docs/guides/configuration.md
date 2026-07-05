@@ -66,9 +66,9 @@ Array of Debrid services:
 
 ### Provider Fields
 
-| Field                             | Type   | Description                                                      | Default                         |
-|-----------------------------------|--------|------------------------------------------------------------------|---------------------------------|
-| `provider`                        | string | Provider type: `realdebrid`, `alldebrid`, `debridlink`, `torbox` | **Required**                    |
+| Field                             | Type   | Description                                                                    | Default                         |
+|-----------------------------------|--------|--------------------------------------------------------------------------------|---------------------------------|
+| `provider`                        | string | Provider type: `realdebrid`, `alldebrid`, `debridlink`, `torbox`, `premiumize` | **Required**                    |
 | `name`                            | string | Display name                                                     | Provider type                   |
 | `api_key`                         | string | API key from provider dashboard                                  | **Required**                    |
 | `download_api_keys`               | array  | Additional keys for download rotation                            | `[api_key]`                     |
@@ -390,6 +390,33 @@ See the [Health Checker & Repair guide](/guides/repair/) for the full model, API
 | `selected_debrid`   | Force specific Debrid provider   | `""` (auto) |
 | `source`            | Config source (`auto`, `config`) | `config`    |
 
+## Queue Cleanup
+
+Decypharr scans connected Arr queues and applies a global rules policy to stuck or failed items.
+
+```json
+{
+  "queue_cleanup": {
+    "rules": [
+      { "id": "failed_download", "action": "blacklist_research" },
+      { "id": "title_mismatch", "action": "import" },
+      { "match": "stalled with no connections", "action": "blacklist" }
+    ]
+  }
+}
+```
+
+| Action               | Effect                                                               |
+|----------------------|----------------------------------------------------------------------|
+| `""`                 | Ignore and leave the item in the Arr queue                           |
+| `import`             | Force a manual import of the downloaded files                        |
+| `blacklist`          | Blocklist and remove the release without searching for a replacement |
+| `blacklist_research` | Blocklist, remove, and trigger a replacement search                  |
+
+Catalog rule IDs include `failed_download`, `title_mismatch`, `matched_by_id`, `unable_to_parse`,
+`no_eligible_files`, `episodes_missing`, `file_empty`, `invalid_local_path`, and `not_grabbed`.
+Custom rules use `match` as a case-insensitive substring over Arr status-message text.
+
 ## Environment Variables
 
 All config options support environment variable overrides using double underscore notation:
@@ -416,6 +443,12 @@ MOUNT__DFS__CHUNK_SIZE=10MB
 # Repair
 REPAIR__ENABLED=true
 REPAIR__INTERVAL=30m
+
+# Arr queue cleanup
+QUEUE_CLEANUP__RULES__0__ID=failed_download
+QUEUE_CLEANUP__RULES__0__ACTION=blacklist_research
+QUEUE_CLEANUP__RULES__1__MATCH=stalled with no connections
+QUEUE_CLEANUP__RULES__1__ACTION=blacklist
 ```
 
 See [defaults.go](https://github.com/sirrobot01/decypharr/blob/main/internal/config/defaults.go) for all defaults.
