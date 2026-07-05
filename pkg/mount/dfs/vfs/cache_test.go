@@ -8,6 +8,7 @@ import (
 
 	"github.com/puzpuzpuz/xsync/v4"
 	"github.com/rs/zerolog"
+	"github.com/sirrobot01/decypharr/internal/buffer"
 	fuseconfig "github.com/sirrobot01/decypharr/pkg/mount/dfs/config"
 )
 
@@ -308,7 +309,13 @@ func TestCleanupItems_ForceZeroOpenClosesRecentItems(t *testing.T) {
 	}
 
 	dataPath := filepath.Join(entryDir, "video.mkv")
-	file, err := os.OpenFile(dataPath, os.O_RDWR|os.O_CREATE, 0644)
+
+	// Build a CacheItem backed by a real buffer so Close() exercises the
+	// production teardown path. The buffer creates and owns the disk file.
+	buf, err := buffer.New(buffer.Config{
+		DiskPath:  dataPath,
+		TotalSize: 1024,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +324,7 @@ func TestCleanupItems_ForceZeroOpenClosesRecentItems(t *testing.T) {
 	item := &CacheItem{
 		cache:    c,
 		key:      "entry/video.mkv",
-		file:     file,
+		buf:      buf,
 		metaPath: dataPath + ".json",
 		info: ItemInfo{
 			ATime: time.Now(),
@@ -335,10 +342,7 @@ func TestCleanupItems_ForceZeroOpenClosesRecentItems(t *testing.T) {
 	if got := c.itemCount.Load(); got != 0 {
 		t.Fatalf("expected item count 0 after forced cleanup, got %d", got)
 	}
-
-	item.fileMu.RLock()
-	defer item.fileMu.RUnlock()
-	if item.file != nil {
-		t.Fatal("expected cache file to be closed after forced cleanup")
+	if item.buf != nil {
+		t.Fatal("expected cache buffer to be closed after forced cleanup")
 	}
 }

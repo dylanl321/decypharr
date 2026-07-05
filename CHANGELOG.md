@@ -12,6 +12,12 @@ All notable changes from the **Decypharr reliability and dual-debrid roadmap**, 
 - **DFS cache maintenance:** Added disk-vs-active cache item stats plus manual cleanup and purge actions for DFS cache observability.
 - **Arr queue cleanup policy:** Added global `queue_cleanup.rules` with built-in catalog rules, custom status-message matches, Web UI controls, JSON config, and env var overrides.
 
+#### Upstream beta buffer and usenet streaming integration
+
+- **Sparse stream buffer:** Added the upstream sparse disk buffer with block-level memory caching, hole punching, and LRU eviction for lower-memory usenet streaming.
+- **Usenet streaming reliability:** Integrated socket buffer tuning, repair worker pooling, backup-provider fallback semantics, and separate import vs repair availability sampling.
+- **DFS cache compatibility:** Kept cache cleanup/purge observability while moving cached reads onto the shared buffer path.
+
 #### Per-provider prefer for torrents / NZBs
 
 - **Debrid providers:** `prefer_torrents` and `prefer_nzbs` checkboxes on each provider in Settings (JSON `prefer_torrents` / `prefer_nzbs`, env `DEBRIDS__N__PREFER_TORRENTS`). Checked providers are tried first on submit; failures fall through to other eligible providers in config order. Overrides the old comma-list UI (advanced `torrent_debrid_order` / `nzb_debrid_order` still work in JSON).
